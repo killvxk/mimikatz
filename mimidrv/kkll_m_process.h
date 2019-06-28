@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include "globals.h"
@@ -15,8 +15,7 @@ typedef enum _KIWI_PROCESS_INDEX {
 	Eprocess_MAX	= 4,
 } KIWI_PROCESS_INDEX, *PKIWI_PROCESS_INDEX;
 
-typedef struct _KIWI_NT6_PRIVILEGES
-{
+typedef struct _KIWI_NT6_PRIVILEGES {
 	UCHAR Present[8];
 	UCHAR Enabled[8];
 	UCHAR EnabledByDefault[8];

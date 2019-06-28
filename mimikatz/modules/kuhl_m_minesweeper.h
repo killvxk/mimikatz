@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include "kuhl_m.h"
@@ -10,6 +10,7 @@
 const KUHL_M kuhl_m_minesweeper;
 
 NTSTATUS kuhl_m_minesweeper_infos(int argc, wchar_t * argv[]);
+NTSTATUS kuhl_m_minesweeper_bsod(int argc, wchar_t * argv[]);
 
 typedef struct _STRUCT_MINESWEEPER_REF_ELEMENT {
 	DWORD cbElements;
@@ -53,3 +54,6 @@ typedef struct _STRUCT_MINESWEEPER_GAME {
 } STRUCT_MINESWEEPER_GAME, *PSTRUCT_MINESWEEPER_GAME;
 
 void kuhl_m_minesweeper_infos_parseField(PKULL_M_MEMORY_HANDLE hMemory, PSTRUCT_MINESWEEPER_REF_ELEMENT base, CHAR ** field, BOOL isVisible);
+//
+//void __fastcall kuhl_m_minesweeper_bsod_thread(PVOID a, INT b, INT c, BOOL d);
+//DWORD kuhl_m_minesweeper_bsod_thread_end();

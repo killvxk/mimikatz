@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "mimidrv.h"
 UNICODE_STRING
@@ -39,11 +39,22 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT theDriverObject, IN PUNICODE_STRING theRe
 			pDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
 			IoCreateSymbolicLink(&uStrDosDeviceName, &uStrDriverName);
 			status = AuxKlibInitialize();
-
-			if(KiwiOsIndex >= KiwiOsIndex_VISTA)
-				status = kkll_m_notify_init();
 		}
 	}
+	return status;
+}
+
+typedef NTSTATUS	(NTAPI * PZWSETSYSTEMENVIRONMENTVALUEEX) (__in PUNICODE_STRING VariableName, __in LPGUID VendorGuid, __in_bcount_opt(ValueLength) PVOID Value, __in ULONG ValueLength, __in ULONG Attributes);
+NTSTATUS kkll_m_sysenvset(SIZE_T szBufferIn, PVOID bufferIn, PKIWI_BUFFER outBuffer)
+{
+	NTSTATUS status = STATUS_NOT_FOUND;
+	UNICODE_STRING uZwSetSystemEnvironmentVariableEx, uVar;
+	PZWSETSYSTEMENVIRONMENTVALUEEX ZwSetSystemEnvironmentValueEx;
+	PMIMIDRV_VARIABLE_NAME_AND_VALUE vnv = (PMIMIDRV_VARIABLE_NAME_AND_VALUE) bufferIn;
+	RtlInitUnicodeString(&uZwSetSystemEnvironmentVariableEx, L"ZwSetSystemEnvironmentValueEx");
+	RtlInitUnicodeString(&uVar, vnv->Name);
+	if(ZwSetSystemEnvironmentValueEx = (PZWSETSYSTEMENVIRONMENTVALUEEX) MmGetSystemRoutineAddress(&uZwSetSystemEnvironmentVariableEx))
+		status = ZwSetSystemEnvironmentValueEx(&uVar, &vnv->VendorGuid, (PUCHAR) vnv + vnv->ValueOffset, vnv->ValueLength, vnv->Attributes);
 	return status;
 }
 
@@ -78,6 +89,9 @@ NTSTATUS MimiDispatchDeviceControl(IN OUT DEVICE_OBJECT *DeviceObject, IN OUT IR
 				break;
 			case IOCTL_MIMIDRV_DEBUG_BUFFER:
 				status = kprintf(&kOutputBuffer, L"in (0x%p - %u) ; out (0x%p - %u)\n", bufferIn, szBufferIn, bufferOut, szBufferOut);
+				break;
+			case IOCTL_MIMIDRV_SYSENVSET:
+				status = kkll_m_sysenvset(szBufferIn, bufferIn, &kOutputBuffer);
 				break;
 
 			case IOCTL_MIMIDRV_PROCESS_LIST:
@@ -116,12 +130,6 @@ NTSTATUS MimiDispatchDeviceControl(IN OUT DEVICE_OBJECT *DeviceObject, IN OUT IR
 			case IOCTL_MIMIDRV_NOTIFY_OBJECT_LIST:
 				status = kkll_m_notify_list_object(&kOutputBuffer);
 				break;
-			case IOCTL_MIMIDRV_NOTIFY_PROCESS_REMOVE:
-				status = kkll_m_notify_remove_process(szBufferIn, bufferIn, &kOutputBuffer);
-				break;
-			case IOCTL_MIMIDRV_NOTIFY_OBJECT_REMOVE:
-				status = kkll_m_notify_remove_object(szBufferIn, bufferIn, &kOutputBuffer);
-				break;
 
 			case IOCTL_MIMIDRV_FILTER_LIST:
 				status = kkll_m_filters_list(&kOutputBuffer);
@@ -159,8 +167,8 @@ NTSTATUS MimiDispatchDeviceControl(IN OUT DEVICE_OBJECT *DeviceObject, IN OUT IR
 
 KIWI_OS_INDEX getWindowsIndex()
 {
-	if(*NtBuildNumber > 9800) // forever blue =)
-		return KiwiOsIndex_10;
+	if(*NtBuildNumber > 18362) // forever 10 =)
+		return KiwiOsIndex_10_1903;
 
 	switch(*NtBuildNumber)
 	{
@@ -187,9 +195,29 @@ KIWI_OS_INDEX getWindowsIndex()
 		case 9600:
 			return KiwiOsIndex_BLUE;
 			break;
-		case 9800:
-		case 9841:
-			return KiwiOsIndex_10;
+		case 10240:
+			return KiwiOsIndex_10_1507;
+			break;
+		case 10586:
+			return KiwiOsIndex_10_1511;
+			break;
+		case 14393:
+			return KiwiOsIndex_10_1607;
+			break;
+		case 15063:
+			return KiwiOsIndex_10_1703;
+			break;
+		case 16299:
+			return KiwiOsIndex_10_1709;
+			break;
+		case 17134:
+			return KiwiOsIndex_10_1803;
+			break;
+		case 17763:
+			return KiwiOsIndex_10_1809;
+			break;
+		case 18362:
+			return KiwiOsIndex_10_1903;
 			break;
 		default:
 			return KiwiOsIndex_UNK;

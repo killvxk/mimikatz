@@ -1,20 +1,26 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include "globals.h"
+#include <userenv.h>
+#include "kull_m_memory.h"
 #include "kull_m_string.h"
 
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64)
 	#define	MmSystemRangeStart	((PBYTE) 0xffff080000000000)
-#elif defined _M_IX86
+#elif defined(_M_IX86)
 	#define MmSystemRangeStart	((PBYTE) 0x80000000)
 #endif
 
+#if !defined(__MACHINE)
 #define __MACHINE(X)	X;
+#endif
+#if !defined(__MACHINEX86)
 #define __MACHINEX86	__MACHINE
+#endif
 __MACHINEX86(unsigned long __readfsdword(unsigned long))
 
 typedef enum _SYSTEM_INFORMATION_CLASS {
@@ -64,7 +70,8 @@ typedef enum _SYSTEM_INFORMATION_CLASS {
 	SystemProcessorSpeedInformation,
 	SystemCurrentTimeZoneInformation,
 	SystemLookasideInformation,
-	KIWI_SystemMmSystemRangeStart = 50
+	KIWI_SystemMmSystemRangeStart = 50,
+	SystemIsolatedUserModeInformation = 165
 } SYSTEM_INFORMATION_CLASS, *PSYSTEM_INFORMATION_CLASS;
 
 typedef enum _PROCESSINFOCLASS {
@@ -186,7 +193,9 @@ typedef enum _KWAIT_REASON {
 } KWAIT_REASON;
 
 typedef struct _SYSTEM_THREAD {
+#if !defined(_M_X64) || !defined(_M_ARM64) // TODO:ARM64
 	LARGE_INTEGER KernelTime;
+#endif
 	LARGE_INTEGER UserTime;
 	LARGE_INTEGER CreateTime;
 	ULONG WaitTime;
@@ -197,7 +206,24 @@ typedef struct _SYSTEM_THREAD {
 	ULONG ContextSwitchCount;
 	ULONG State;
 	KWAIT_REASON WaitReason;
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
+	LARGE_INTEGER unk;
+#endif
 } SYSTEM_THREAD, *PSYSTEM_THREAD;
+
+typedef struct _SYSTEM_BASIC_INFORMATION {
+    ULONG Reserved;
+    ULONG TimerResolution;
+    ULONG PageSize;
+    ULONG NumberOfPhysicalPages;
+    ULONG LowestPhysicalPageNumber;
+    ULONG HighestPhysicalPageNumber;
+    ULONG AllocationGranularity;
+    ULONG MinimumUserModeAddress;
+    ULONG MaximumUserModeAddress;
+    ULONG ActiveProcessorsAffinityMask;
+    UCHAR NumberOfProcessors;
+} SYSTEM_BASIC_INFORMATION, *PSYSTEM_BASIC_INFORMATION;
 
 typedef struct _SYSTEM_PROCESS_INFORMATION {
 	ULONG NextEntryOffset;
@@ -254,7 +280,7 @@ typedef struct _PEB {
 	/// ...
 } PEB, *PPEB;
 
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
 typedef struct _LSA_UNICODE_STRING_F32 {
 	USHORT Length;
 	USHORT MaximumLength;
@@ -300,6 +326,13 @@ typedef struct _PEB_F32 {
 } PEB_F32, *PPEB_F32;
 #endif
 
+typedef struct _KERNEL_USER_TIMES {
+	LARGE_INTEGER CreateTime;
+	LARGE_INTEGER ExitTime;
+	LARGE_INTEGER KernelTime;
+	LARGE_INTEGER UserTime;
+} KERNEL_USER_TIMES, *PKERNEL_USER_TIMES;
+
 typedef struct _PROCESS_BASIC_INFORMATION {
 	NTSTATUS ExitStatus;
 	PPEB PebBaseAddress;
@@ -309,8 +342,7 @@ typedef struct _PROCESS_BASIC_INFORMATION {
 	ULONG_PTR InheritedFromUniqueProcessId;
 } PROCESS_BASIC_INFORMATION,*PPROCESS_BASIC_INFORMATION;
 
-typedef struct _RTL_PROCESS_MODULE_INFORMATION
-{
+typedef struct _RTL_PROCESS_MODULE_INFORMATION {
 	HANDLE Section;
 	PVOID MappedBase;
 	PVOID ImageBase;
@@ -322,38 +354,53 @@ typedef struct _RTL_PROCESS_MODULE_INFORMATION
 	USHORT OffsetToFileName;
 	UCHAR FullPathName[256];
 } RTL_PROCESS_MODULE_INFORMATION, *PRTL_PROCESS_MODULE_INFORMATION;
- 
-typedef struct _RTL_PROCESS_MODULES
-{
+
+typedef struct _RTL_PROCESS_MODULES {
 	ULONG NumberOfModules;
 	RTL_PROCESS_MODULE_INFORMATION Modules[ANYSIZE_ARRAY];
 } RTL_PROCESS_MODULES, *PRTL_PROCESS_MODULES;
 
+typedef struct _SYSTEM_ISOLATED_USER_MODE_INFORMATION {
+	BOOLEAN SecureKernelRunning : 1;
+	BOOLEAN HvciEnabled : 1;
+	BOOLEAN HvciStrictMode : 1;
+	BOOLEAN DebugEnabled : 1;
+	BOOLEAN FirmwarePageProtection : 1;
+	BOOLEAN SpareFlags : 1;
+	BOOLEAN TrustletRunning : 1;
+	BOOLEAN SpareFlags2 : 1;
+	BOOLEAN Spare0[15];
+	//ULONGLONG Spare1;
+} SYSTEM_ISOLATED_USER_MODE_INFORMATION, *PSYSTEM_ISOLATED_USER_MODE_INFORMATION;
+
 extern NTSTATUS WINAPI NtQuerySystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass, OUT PVOID SystemInformation, IN ULONG SystemInformationLength, OUT OPTIONAL PULONG ReturnLength);
+extern NTSTATUS WINAPI NtQuerySystemInformationEx(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID InputBuffer,  ULONG InputBufferLength,  PVOID SystemInformation,  ULONG SystemInformationLength, ULONG *ReturnLength);
+extern NTSTATUS WINAPI NtSetSystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass, IN PVOID SystemInformation, IN ULONG SystemInformationLength);
 extern NTSTATUS WINAPI NtQueryInformationProcess(IN HANDLE ProcessHandle, IN PROCESSINFOCLASS ProcessInformationClass, OUT PVOID ProcessInformation, OUT ULONG ProcessInformationLength, OUT OPTIONAL PULONG ReturnLength);
 extern NTSTATUS WINAPI NtSuspendProcess(IN HANDLE ProcessHandle);
 extern NTSTATUS WINAPI NtResumeProcess(IN HANDLE ProcessHandle);
 extern NTSTATUS WINAPI NtTerminateProcess(IN OPTIONAL HANDLE ProcessHandle, IN NTSTATUS ExitStatus);
 
+typedef NTSTATUS (WINAPI * PNTQUERYSYSTEMINFORMATIONEX) (SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID InputBuffer,  ULONG InputBufferLength,  PVOID SystemInformation,  ULONG SystemInformationLength, ULONG *ReturnLength);
+
 extern PPEB WINAPI RtlGetCurrentPeb();
 extern NTSTATUS WINAPI RtlAdjustPrivilege(IN ULONG Privilege, IN BOOL Enable, IN BOOL CurrentThread, OUT PULONG pPreviousState);
 extern NTSTATUS	WINAPI RtlCreateUserThread(IN HANDLE Process, IN OPTIONAL PSECURITY_DESCRIPTOR ThreadSecurityDescriptor, IN CHAR Flags, IN OPTIONAL ULONG ZeroBits, IN OPTIONAL SIZE_T MaximumStackSize, IN OPTIONAL SIZE_T CommittedStackSize, IN OPTIONAL PTHREAD_START_ROUTINE StartAddress, IN OPTIONAL PVOID Parameter, OUT OPTIONAL PHANDLE Thread, OUT OPTIONAL PCLIENT_ID ClientId);
 
-
-typedef struct _KULL_M_PROCESS_VERY_BASIC_MODULE_INFORMATION{
+typedef struct _KULL_M_PROCESS_VERY_BASIC_MODULE_INFORMATION {
 	KULL_M_MEMORY_ADDRESS DllBase;
 	ULONG SizeOfImage;
 	ULONG TimeDateStamp;
 	PCUNICODE_STRING NameDontUseOutsideCallback;
 } KULL_M_PROCESS_VERY_BASIC_MODULE_INFORMATION, *PKULL_M_PROCESS_VERY_BASIC_MODULE_INFORMATION;
 
-typedef struct _KULL_M_PROCESS_PID_FOR_NAME{
+typedef struct _KULL_M_PROCESS_PID_FOR_NAME {
 	PCUNICODE_STRING	name;
 	PDWORD				processId;
 	BOOL				isFound;
 } KULL_M_PROCESS_PID_FOR_NAME, *PKULL_M_PROCESS_PID_FOR_NAME;
 
-typedef struct _KULL_M_PROCESS_VERY_BASIC_MODULE_INFORMATION_FOR_NAME{
+typedef struct _KULL_M_PROCESS_VERY_BASIC_MODULE_INFORMATION_FOR_NAME {
 	PCUNICODE_STRING	name;
 	PKULL_M_PROCESS_VERY_BASIC_MODULE_INFORMATION	informations;
 	BOOL				isFound;
@@ -384,6 +431,14 @@ typedef struct _KULL_M_PROCESS_EXPORTED_ENTRY {
 typedef BOOL (CALLBACK * PKULL_M_EXPORTED_ENTRY_ENUM_CALLBACK) (PKULL_M_PROCESS_EXPORTED_ENTRY pExportedEntryInformations, PVOID pvArg);
 NTSTATUS kull_m_process_getExportedEntryInformations(PKULL_M_MEMORY_ADDRESS address, PKULL_M_EXPORTED_ENTRY_ENUM_CALLBACK callBack, PVOID pvArg);
 
+typedef struct _KULL_M_PROCESS_PROCADDRESS_FOR_NAME {
+	PCSTR name;
+	KULL_M_MEMORY_ADDRESS address;
+	BOOL				isFound;
+} KULL_M_PROCESS_PROCADDRESS_FOR_NAME, *PKULL_M_PROCESS_PROCADDRESS_FOR_NAME;
+BOOL CALLBACK kull_m_process_getProcAddress_callback(PKULL_M_PROCESS_EXPORTED_ENTRY pExportedEntryInformations, PVOID pvArg);
+BOOL kull_m_process_getProcAddress(PKULL_M_MEMORY_ADDRESS moduleAddress, PCSTR name, PKULL_M_MEMORY_ADDRESS functionAddress);
+
 typedef struct _KULL_M_PROCESS_IMPORTED_ENTRY {
 	WORD	machine;
 	PSTR	libname;
@@ -411,3 +466,6 @@ typedef enum _KULL_M_PROCESS_CREATE_TYPE {
 } KULL_M_PROCESS_CREATE_TYPE;
 
 BOOL kull_m_process_create(KULL_M_PROCESS_CREATE_TYPE type, PCWSTR commandLine, DWORD processFlags, HANDLE hToken, DWORD logonFlags, PCWSTR user, PCWSTR domain, PCWSTR password, PPROCESS_INFORMATION pProcessInfos, BOOL autoCloseHandle);
+
+BOOL kull_m_process_getUnicodeString(IN PUNICODE_STRING string, IN PKULL_M_MEMORY_HANDLE source);
+BOOL kull_m_process_getSid(IN PSID * pSid, IN PKULL_M_MEMORY_HANDLE source);

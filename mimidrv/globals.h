@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include <ntifs.h>
@@ -34,15 +34,21 @@ typedef enum _KIWI_OS_INDEX {
 	KiwiOsIndex_7		= 4,
 	KiwiOsIndex_8		= 5,
 	KiwiOsIndex_BLUE	= 6,
-	KiwiOsIndex_10		= 7,
-
-	KiwiOsIndex_MAX		= 8,
+	KiwiOsIndex_10_1507	= 7,
+	KiwiOsIndex_10_1511	= 8,
+	KiwiOsIndex_10_1607	= 9,
+	KiwiOsIndex_10_1703	= 10,
+	KiwiOsIndex_10_1709	= 11,
+	KiwiOsIndex_10_1803	= 12,
+	KiwiOsIndex_10_1809	= 13,
+	KiwiOsIndex_10_1903	= 14,
+	KiwiOsIndex_MAX		= 15,
 } KIWI_OS_INDEX, *PKIWI_OS_INDEX;
 
-#ifdef _M_IX86
-#define EX_FAST_REF_MASK	0x07
-#else
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
 #define EX_FAST_REF_MASK	0x0f
+#elif defined(_M_IX86)
+#define EX_FAST_REF_MASK	0x07
 #endif
 
 #define KIWI_mask3bits(addr)	 (((ULONG_PTR) (addr)) & ~7)

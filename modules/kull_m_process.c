@@ -1,24 +1,24 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kull_m_process.h"
 
 NTSTATUS kull_m_process_NtQuerySystemInformation(SYSTEM_INFORMATION_CLASS informationClass, PVOID buffer, ULONG informationLength)
 {
 	NTSTATUS status = STATUS_INFO_LENGTH_MISMATCH;
-	DWORD sizeOfBuffer;
+	DWORD sizeOfBuffer, returnedLen;
 
 	if(*(PVOID *) buffer)
 	{
-		status = NtQuerySystemInformation(informationClass, *(PVOID *) buffer, informationLength, NULL);
+		status = NtQuerySystemInformation(informationClass, *(PVOID *) buffer, informationLength, &returnedLen);
 	}
 	else
 	{
 		for(sizeOfBuffer = 0x1000; (status == STATUS_INFO_LENGTH_MISMATCH) && (*(PVOID *) buffer = LocalAlloc(LPTR, sizeOfBuffer)) ; sizeOfBuffer <<= 1)
 		{
-			status = NtQuerySystemInformation(informationClass, *(PVOID *) buffer, sizeOfBuffer, NULL);
+			status = NtQuerySystemInformation(informationClass, *(PVOID *) buffer, sizeOfBuffer, &returnedLen);
 			if(!NT_SUCCESS(status))
 				LocalFree(*(PVOID *) buffer);
 		}
@@ -44,7 +44,7 @@ NTSTATUS kull_m_process_getProcessInformation(PKULL_M_PROCESS_ENUM_CALLBACK call
 BOOL CALLBACK kull_m_process_callback_pidForName(PSYSTEM_PROCESS_INFORMATION pSystemProcessInformation, PVOID pvArg)
 {
 	if(((PKULL_M_PROCESS_PID_FOR_NAME) pvArg)->isFound = RtlEqualUnicodeString(&pSystemProcessInformation->ImageName, ((PKULL_M_PROCESS_PID_FOR_NAME) pvArg)->name, TRUE))
-		*((PKULL_M_PROCESS_PID_FOR_NAME) pvArg)->processId = (DWORD) pSystemProcessInformation->UniqueProcessId;
+		*((PKULL_M_PROCESS_PID_FOR_NAME) pvArg)->processId = PtrToUlong(pSystemProcessInformation->UniqueProcessId);
 	return !((PKULL_M_PROCESS_PID_FOR_NAME) pvArg)->isFound;
 }
 
@@ -65,13 +65,12 @@ NTSTATUS kull_m_process_getVeryBasicModuleInformations(PKULL_M_MEMORY_HANDLE mem
 	NTSTATUS status = STATUS_DLL_NOT_FOUND;
 	PLDR_DATA_TABLE_ENTRY pLdrEntry;
 	PEB Peb; PEB_LDR_DATA LdrData; LDR_DATA_TABLE_ENTRY LdrEntry;
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
 	PLDR_DATA_TABLE_ENTRY_F32 pLdrEntry32;
 	PEB_F32 Peb32; PEB_LDR_DATA_F32 LdrData32; LDR_DATA_TABLE_ENTRY_F32 LdrEntry32;
 #endif
 	ULONG i;
-	KULL_M_MEMORY_HANDLE  hBuffer = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aBuffer = {NULL, &hBuffer};
+	KULL_M_MEMORY_ADDRESS aBuffer = {NULL, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	KULL_M_MEMORY_ADDRESS aProcess= {NULL, memory};
 	PBYTE aLire, fin;
 	PWCHAR moduleNameW;
@@ -100,22 +99,22 @@ NTSTATUS kull_m_process_getVeryBasicModuleInformations(PKULL_M_MEMORY_HANDLE mem
 				}
 				status = STATUS_SUCCESS;
 		}
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
 		moduleInformation.NameDontUseOutsideCallback = &moduleName;
 		if(continueCallback && NT_SUCCESS(status) && kull_m_process_peb(memory, (PPEB) &Peb32, TRUE))
 		{
 			status = STATUS_PARTIAL_COPY;
-
-			for(pLdrEntry32  = (PLDR_DATA_TABLE_ENTRY_F32) ((PBYTE) (((PEB_LDR_DATA_F32 *) Peb32.Ldr)->InMemoryOrderModulevector.Flink) - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks));
-				(pLdrEntry32 != (PLDR_DATA_TABLE_ENTRY_F32) ((PBYTE) (Peb32.Ldr) + FIELD_OFFSET(PEB_LDR_DATA, InLoadOrderModulevector))) && continueCallback;
-				pLdrEntry32  = (PLDR_DATA_TABLE_ENTRY_F32) ((PBYTE) (pLdrEntry32->InMemoryOrderLinks.Flink ) - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks))
+			
+			for(pLdrEntry32  = (PLDR_DATA_TABLE_ENTRY_F32) ((PBYTE) ULongToPtr(((PEB_LDR_DATA_F32 *) ULongToPtr(Peb32.Ldr))->InMemoryOrderModulevector.Flink) - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks));
+				(pLdrEntry32 != (PLDR_DATA_TABLE_ENTRY_F32) ((PBYTE) ULongToPtr(Peb32.Ldr) + FIELD_OFFSET(PEB_LDR_DATA, InLoadOrderModulevector))) && continueCallback;
+				pLdrEntry32  = (PLDR_DATA_TABLE_ENTRY_F32) ((PBYTE) ULongToPtr(pLdrEntry32->InMemoryOrderLinks.Flink) - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks))
 				)
 			{
-				moduleInformation.DllBase.address = (PVOID) pLdrEntry32->DllBase;
+				moduleInformation.DllBase.address = ULongToPtr(pLdrEntry32->DllBase);
 				moduleInformation.SizeOfImage = pLdrEntry32->SizeOfImage;
 				moduleName.Length = pLdrEntry32->BaseDllName.Length;
 				moduleName.MaximumLength = pLdrEntry32->BaseDllName.MaximumLength;
-				moduleName.Buffer = (PWSTR) pLdrEntry32->BaseDllName.Buffer;
+				moduleName.Buffer = (PWSTR) ULongToPtr(pLdrEntry32->BaseDllName.Buffer);
 				kull_m_process_adjustTimeDateStamp(&moduleInformation);
 				continueCallback = callBack(&moduleInformation, pvArg);
 			}
@@ -159,31 +158,31 @@ NTSTATUS kull_m_process_getVeryBasicModuleInformations(PKULL_M_MEMORY_HANDLE mem
 				status = STATUS_SUCCESS;
 			}
 		}
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
 		if(continueCallback && NT_SUCCESS(status) && kull_m_process_peb(memory, (PPEB) &Peb32, TRUE))
 		{
 			status = STATUS_PARTIAL_COPY;
-			aBuffer.address = &LdrData32; aProcess.address = (PVOID) Peb32.Ldr;
+			aBuffer.address = &LdrData32; aProcess.address = ULongToPtr(Peb32.Ldr);
 			if(kull_m_memory_copy(&aBuffer, &aProcess, sizeof(LdrData32)))
 			{
 				for(
-					aLire  = (PBYTE) (LdrData32.InMemoryOrderModulevector.Flink) - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks),
-					fin    = (PBYTE) (Peb32.Ldr) + FIELD_OFFSET(PEB_LDR_DATA_F32, InLoadOrderModulevector);
+					aLire  = (PBYTE) ULongToPtr(LdrData32.InMemoryOrderModulevector.Flink) - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks),
+					fin    = (PBYTE) ULongToPtr(Peb32.Ldr) + FIELD_OFFSET(PEB_LDR_DATA_F32, InLoadOrderModulevector);
 					(aLire != fin) && continueCallback;
-					aLire  = (PBYTE) LdrEntry32.InMemoryOrderLinks.Flink - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks)
+					aLire  = (PBYTE) ULongToPtr(LdrEntry32.InMemoryOrderLinks.Flink) - FIELD_OFFSET(LDR_DATA_TABLE_ENTRY_F32, InMemoryOrderLinks)
 					)
 				{
 					aBuffer.address = &LdrEntry32; aProcess.address = aLire;
 					if(kull_m_memory_copy(&aBuffer, &aProcess, sizeof(LdrEntry32)))
 					{
-						moduleInformation.DllBase.address = (PVOID) LdrEntry32.DllBase;
+						moduleInformation.DllBase.address = ULongToPtr(LdrEntry32.DllBase);
 						moduleInformation.SizeOfImage = LdrEntry32.SizeOfImage;
 						
 						moduleName.Length = LdrEntry32.BaseDllName.Length;
 						moduleName.MaximumLength = LdrEntry32.BaseDllName.MaximumLength;
 						if(moduleName.Buffer = (PWSTR) LocalAlloc(LPTR, moduleName.MaximumLength))
 						{
-							aBuffer.address = moduleName.Buffer; aProcess.address = (PVOID) LdrEntry32.BaseDllName.Buffer;
+							aBuffer.address = moduleName.Buffer; aProcess.address = ULongToPtr(LdrEntry32.BaseDllName.Buffer);
 							if(kull_m_memory_copy(&aBuffer, &aProcess, moduleName.MaximumLength))
 							{
 								kull_m_process_adjustTimeDateStamp(&moduleInformation);
@@ -291,13 +290,13 @@ NTSTATUS kull_m_process_getMemoryInformations(PKULL_M_MEMORY_HANDLE memory, PKUL
 {
 	NTSTATUS status = STATUS_NOT_FOUND;
 	MEMORY_BASIC_INFORMATION memoryInfos;
-	PBYTE currentPage, maxPage;
+	PBYTE currentPage, maxPage = NULL; PBYTE *m = &maxPage;
 	PMINIDUMP_MEMORY_INFO_LIST maListeInfo = NULL;
 	PMINIDUMP_MEMORY_INFO mesInfos = NULL;
 	ULONG i;
 	BOOL continueCallback = TRUE;
 
-	if(!NT_SUCCESS(kull_m_process_NtQuerySystemInformation(KIWI_SystemMmSystemRangeStart, &maxPage, sizeof(PBYTE))))
+	if(!NT_SUCCESS(kull_m_process_NtQuerySystemInformation(KIWI_SystemMmSystemRangeStart, &m, sizeof(PBYTE))))
 		maxPage = MmSystemRangeStart;
 
 	switch(memory->type)
@@ -346,14 +345,13 @@ BOOL kull_m_process_peb(PKULL_M_MEMORY_HANDLE memory, PPEB pPeb, BOOL isWOW)
 	BOOL status = FALSE;
 	PROCESS_BASIC_INFORMATION processInformations;
 	HANDLE hProcess = (memory->type == KULL_M_MEMORY_TYPE_PROCESS) ? memory->pHandleProcess->hProcess : GetCurrentProcess();
-	KULL_M_MEMORY_HANDLE  hBuffer = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aBuffer = {pPeb, &hBuffer};
+	KULL_M_MEMORY_ADDRESS aBuffer = {pPeb, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	KULL_M_MEMORY_ADDRESS aProcess= {NULL, memory};
 	PROCESSINFOCLASS info;
 	ULONG szPeb, szBuffer, szInfos;
 	LPVOID buffer;
 
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
 	if(isWOW)
 	{
 		info = ProcessWow64Information;
@@ -368,12 +366,13 @@ BOOL kull_m_process_peb(PKULL_M_MEMORY_HANDLE memory, PPEB pPeb, BOOL isWOW)
 		szBuffer = sizeof(processInformations);
 		buffer = &processInformations;
 		szPeb = sizeof(PEB);
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64) // TODO:ARM64
 	}
 #endif
 
 	switch(memory->type)
 	{
+#if !defined(MIMIKATZ_W2000_SUPPORT)
 	case KULL_M_MEMORY_TYPE_OWN:
 		if(!isWOW)
 		{
@@ -381,6 +380,7 @@ BOOL kull_m_process_peb(PKULL_M_MEMORY_HANDLE memory, PPEB pPeb, BOOL isWOW)
 			status = TRUE;
 			break;
 		}
+#endif
 	case KULL_M_MEMORY_TYPE_PROCESS:
 		if(NT_SUCCESS(NtQueryInformationProcess(hProcess, info, buffer, szBuffer, &szInfos)) && (szInfos == szBuffer) && processInformations.PebBaseAddress)
 		{
@@ -396,8 +396,7 @@ BOOL kull_m_process_ntheaders(PKULL_M_MEMORY_ADDRESS pBase, PIMAGE_NT_HEADERS * 
 {
 	BOOL status = FALSE;
 	IMAGE_DOS_HEADER headerImageDos;
-	KULL_M_MEMORY_HANDLE  hBuffer = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aBuffer = {&headerImageDos, &hBuffer}, aRealNtHeaders = {NULL, &hBuffer}, aProcess= {NULL, pBase->hMemory};
+	KULL_M_MEMORY_ADDRESS aBuffer = {&headerImageDos, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE}, aRealNtHeaders = {NULL, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE}, aProcess= {NULL, pBase->hMemory};
 	DWORD size;
 
 	if(kull_m_memory_copy(&aBuffer, pBase, sizeof(IMAGE_DOS_HEADER)) && headerImageDos.e_magic == IMAGE_DOS_SIGNATURE)
@@ -427,8 +426,7 @@ BOOL kull_m_process_ntheaders(PKULL_M_MEMORY_ADDRESS pBase, PIMAGE_NT_HEADERS * 
 BOOL kull_m_process_datadirectory(PKULL_M_MEMORY_ADDRESS pBase, DWORD entry, PDWORD pRva, PDWORD pSize, PWORD pMachine, PVOID *pData)
 {
 	BOOL status = FALSE;
-	KULL_M_MEMORY_HANDLE  hBuffer = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aBuffer = {NULL, &hBuffer};
+	KULL_M_MEMORY_ADDRESS aBuffer = {NULL, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	KULL_M_MEMORY_ADDRESS aProcess= *pBase;
 	
 	DWORD rva, size;
@@ -483,35 +481,36 @@ BOOL kull_m_process_create(KULL_M_PROCESS_CREATE_TYPE type, PCWSTR commandLine, 
 	RtlZeroMemory(&startupInfo, sizeof(STARTUPINFO));
 	startupInfo.cb = sizeof(STARTUPINFO);
 
-	ptrProcessInfos = pProcessInfos ? pProcessInfos : (PPROCESS_INFORMATION) LocalAlloc(LPTR, sizeof(PROCESS_INFORMATION));
-
-	if(dupCommandLine = _wcsdup(commandLine))
+	if(ptrProcessInfos = pProcessInfos ? pProcessInfos : (PPROCESS_INFORMATION) LocalAlloc(LPTR, sizeof(PROCESS_INFORMATION)))
 	{
-		switch(type)
+		if(dupCommandLine = _wcsdup(commandLine))
 		{
-		case KULL_M_PROCESS_CREATE_NORMAL:
-			status = CreateProcess(NULL, dupCommandLine, NULL, NULL, FALSE, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
-			break;
-		case KULL_M_PROCESS_CREATE_USER:
-			status = CreateProcessAsUser(hUserToken, NULL, dupCommandLine, NULL, NULL, FALSE, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
-			break;
-		/*case KULL_M_PROCESS_CREATE_TOKEN:
-			status = CreateProcessWithTokenW(hUserToken, iLogonFlags, NULL, dupCommandLine, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
-			break;*/
-		case KULL_M_PROCESS_CREATE_LOGON:
-			status = CreateProcessWithLogonW(user, domain, password, iLogonFlags, NULL, dupCommandLine, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
-			break;
-		}
+			switch(type)
+			{
+			case KULL_M_PROCESS_CREATE_NORMAL:
+				status = CreateProcess(NULL, dupCommandLine, NULL, NULL, FALSE, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
+				break;
+			case KULL_M_PROCESS_CREATE_USER:
+				status = CreateProcessAsUser(hUserToken, NULL, dupCommandLine, NULL, NULL, FALSE, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
+				break;
+				/*case KULL_M_PROCESS_CREATE_TOKEN:
+				status = CreateProcessWithTokenW(hUserToken, iLogonFlags, NULL, dupCommandLine, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
+				break;*/
+			case KULL_M_PROCESS_CREATE_LOGON:
+				status = CreateProcessWithLogonW(user, domain, password, iLogonFlags, NULL, dupCommandLine, iProcessFlags, NULL, NULL, &startupInfo, ptrProcessInfos);
+				break;
+			}
 
-		if(autoCloseHandle || !pProcessInfos)
-		{
-			CloseHandle(ptrProcessInfos->hThread);
-			CloseHandle(ptrProcessInfos->hProcess);
-		}
+			if(status && (autoCloseHandle || !pProcessInfos))
+			{
+				CloseHandle(ptrProcessInfos->hThread);
+				CloseHandle(ptrProcessInfos->hProcess);
+			}
 
-		if(!pProcessInfos)
-			LocalFree(ptrProcessInfos);
-		free(dupCommandLine);
+			if(!pProcessInfos)
+				LocalFree(ptrProcessInfos);
+			free(dupCommandLine);
+		}
 	}
 	return status;
 }
@@ -560,12 +559,27 @@ NTSTATUS kull_m_process_getExportedEntryInformations(PKULL_M_MEMORY_ADDRESS addr
 	return STATUS_SUCCESS;
 }
 
+BOOL CALLBACK kull_m_process_getProcAddress_callback(PKULL_M_PROCESS_EXPORTED_ENTRY pExportedEntryInformations, PVOID pvArg)
+{
+	if(((PKULL_M_PROCESS_PROCADDRESS_FOR_NAME) pvArg)->isFound = _stricmp(pExportedEntryInformations->name, ((PKULL_M_PROCESS_PROCADDRESS_FOR_NAME) pvArg)->name) == 0)
+		((PKULL_M_PROCESS_PROCADDRESS_FOR_NAME) pvArg)->address = pExportedEntryInformations->function;
+	return !((PKULL_M_PROCESS_PROCADDRESS_FOR_NAME) pvArg)->isFound;
+}
+
+BOOL kull_m_process_getProcAddress(PKULL_M_MEMORY_ADDRESS moduleAddress, PCSTR name, PKULL_M_MEMORY_ADDRESS functionAddress)
+{
+	KULL_M_PROCESS_PROCADDRESS_FOR_NAME s = {name, NULL, FALSE};
+	if(NT_SUCCESS(kull_m_process_getExportedEntryInformations(moduleAddress, kull_m_process_getProcAddress_callback, &s)))
+		if(s.isFound)
+			*functionAddress = s.address;
+	return s.isFound;
+}
+
 PSTR kull_m_process_getImportNameWithoutEnd(PKULL_M_MEMORY_ADDRESS base)
 {
 	CHAR sEnd = '\0';
 	SIZE_T size;
-	KULL_M_MEMORY_HANDLE  hBuffer = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aStringBuffer = {NULL, &hBuffer}, aNullBuffer = {&sEnd, &hBuffer};
+	KULL_M_MEMORY_ADDRESS aStringBuffer = {NULL, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE}, aNullBuffer = {&sEnd, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	KULL_M_MEMORY_SEARCH sMemory = {{{base->address, base->hMemory}, MAX_PATH}, NULL};
 
 	if(kull_m_memory_search(&aNullBuffer, sizeof(sEnd), &sMemory, FALSE))
@@ -580,12 +594,11 @@ PSTR kull_m_process_getImportNameWithoutEnd(PKULL_M_MEMORY_ADDRESS base)
 
 NTSTATUS kull_m_process_getImportedEntryInformations(PKULL_M_MEMORY_ADDRESS address, PKULL_M_IMPORTED_ENTRY_ENUM_CALLBACK callBack, PVOID pvArg)
 {
-	KULL_M_MEMORY_HANDLE  hBuffer = {KULL_M_MEMORY_TYPE_OWN, NULL};
 	PVOID pLocalBuffer;
 	PIMAGE_IMPORT_DESCRIPTOR pImportDir;
 	ULONG sizeThunk;
 	ULONGLONG OriginalFirstThunk, FirstThunk, ordinalPattern;
-	KULL_M_MEMORY_ADDRESS aOriginalFirstThunk = {&OriginalFirstThunk, &hBuffer}, aFirstThunk = {&FirstThunk, &hBuffer};
+	KULL_M_MEMORY_ADDRESS aOriginalFirstThunk = {&OriginalFirstThunk, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE}, aFirstThunk = {&FirstThunk, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	KULL_M_MEMORY_ADDRESS aProcOriginalFirstThunk = {NULL, address->hMemory}, aProcName = {NULL, address->hMemory};
 	KULL_M_PROCESS_IMPORTED_ENTRY importedEntry;
 	BOOL continueCallback = TRUE;
@@ -646,4 +659,47 @@ NTSTATUS kull_m_process_getImportedEntryInformations(PKULL_M_MEMORY_ADDRESS addr
 		LocalFree(pLocalBuffer);
 	}
 	return TRUE;
+}
+
+BOOL kull_m_process_getUnicodeString(IN PUNICODE_STRING string, IN PKULL_M_MEMORY_HANDLE source)
+{
+	BOOL status = FALSE;
+	KULL_M_MEMORY_HANDLE hOwn = {KULL_M_MEMORY_TYPE_OWN, NULL};
+	KULL_M_MEMORY_ADDRESS aDestin = {NULL, &hOwn};
+	KULL_M_MEMORY_ADDRESS aSource = {string->Buffer, source};
+	
+	string->Buffer = NULL;
+	if(aSource.address && string->MaximumLength)
+	{
+		if(aDestin.address = LocalAlloc(LPTR, string->MaximumLength))
+		{
+			string->Buffer = (PWSTR) aDestin.address;
+			status = kull_m_memory_copy(&aDestin, &aSource, string->MaximumLength);
+		}
+	}
+	return status;
+}
+
+BOOL kull_m_process_getSid(IN PSID * pSid, IN PKULL_M_MEMORY_HANDLE source)
+{
+	BOOL status = FALSE;
+	BYTE nbAuth;
+	DWORD sizeSid;
+	KULL_M_MEMORY_HANDLE hOwn = {KULL_M_MEMORY_TYPE_OWN, NULL};
+	KULL_M_MEMORY_ADDRESS aDestin = {&nbAuth, &hOwn};
+	KULL_M_MEMORY_ADDRESS aSource = {(PBYTE) *pSid + 1, source};
+
+	*pSid = NULL;
+	if(kull_m_memory_copy(&aDestin, &aSource, sizeof(BYTE)))
+	{
+		aSource.address = (PBYTE) aSource.address - 1;
+		sizeSid =  4 * nbAuth + 6 + 1 + 1;
+
+		if(aDestin.address = LocalAlloc(LPTR, sizeSid))
+		{
+			*pSid = (PSID) aDestin.address;
+			status = kull_m_memory_copy(&aDestin, &aSource, sizeSid);
+		}
+	}
+	return status;
 }

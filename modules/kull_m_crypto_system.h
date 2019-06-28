@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include "globals.h"
@@ -15,6 +15,10 @@
 #define DES_BLOCK_LENGTH	8
 #define AES_128_KEY_LENGTH	16
 #define AES_256_KEY_LENGTH	32
+
+#if !defined(IPSEC_FLAG_CHECK)
+#define IPSEC_FLAG_CHECK 0xf42a19b6
+#endif
 
 typedef struct _MD4_CTX {
 	DWORD state[4];
@@ -34,6 +38,7 @@ typedef struct _SHA_CTX {
 	BYTE buffer[64];
 	DWORD state[5];
 	DWORD count[2];
+	DWORD unk[6]; // to avoid error on XP
 } SHA_CTX, *PSHA_CTX;
 
 typedef struct _SHA_DIGEST {
@@ -117,20 +122,23 @@ extern NTSTATUS WINAPI RtlEncryptDecryptRC4(IN OUT PCRYPTO_BUFFER data, IN PCCRY
 extern NTSTATUS WINAPI SystemFunction034(IN RPC_BINDING_HANDLE hRPC, IN OUT OPTIONAL HANDLE hUnk0, OUT LPBYTE output);
 extern BOOL WINAPI RtlCheckSignatureInFile(IN LPCWSTR filename);
 
-#ifndef RtlGenRandom
+#if !defined(RtlGenRandom)
 #define RtlGenRandom				SystemFunction036
 extern BOOL WINAPI RtlGenRandom(OUT LPBYTE output, IN DWORD length);
 #endif
 
-#ifndef RtlEncryptMemory
+#if !defined(RtlEncryptMemory)
 #define RtlEncryptMemory			SystemFunction040
 extern NTSTATUS WINAPI RtlEncryptMemory(IN OUT LPBYTE data, DWORD length, DWORD flags);
 #endif 
 
-#ifndef RtlDecryptMemory
+#if !defined(RtlDecryptMemory)
 #define RtlDecryptMemory			SystemFunction041
 extern NTSTATUS WINAPI RtlDecryptMemory(IN OUT LPBYTE data, DWORD length, DWORD flags);
 #endif
+
+#define KERB_NON_KERB_SALT					16
+#define KERB_NON_KERB_CKSUM_SALT			17
 
 typedef NTSTATUS (WINAPI * PKERB_CHECKSUM_INITIALIZE) (DWORD unk0, PVOID * pContext);
 typedef NTSTATUS (WINAPI * PKERB_CHECKSUM_SUM) (PVOID pContext, DWORD Size, LPCVOID Buffer);
@@ -150,30 +158,13 @@ typedef struct _KERB_CHECKSUM {
 	PVOID unk0_null;
 } KERB_CHECKSUM, *PKERB_CHECKSUM;
 
-typedef struct _KERB_HASHPASSWORD_GENERIC {
-	DWORD Type;
-	SIZE_T Size;
-	PBYTE Checksump;
-} KERB_HASHPASSWORD_GENERIC, *PKERB_HASHPASSWORD_GENERIC;
-
-typedef struct _KERB_HASHPASSWORD_5 {
-	LSA_UNICODE_STRING salt;	// http://tools.ietf.org/html/rfc3962
-	KERB_HASHPASSWORD_GENERIC generic;
-} KERB_HASHPASSWORD_5, *PKERB_HASHPASSWORD_5;
-
-typedef struct _KERB_HASHPASSWORD_6 {
-	LSA_UNICODE_STRING salt;	// http://tools.ietf.org/html/rfc3962
-	PVOID stringToKey; // AES Iterations (dword ?)
-	KERB_HASHPASSWORD_GENERIC generic;
-} KERB_HASHPASSWORD_6, *PKERB_HASHPASSWORD_6;
-
 typedef NTSTATUS (WINAPI * PKERB_ECRYPT_INITIALIZE) (LPCVOID Key, DWORD KeySize, DWORD KeyUsage, PVOID * pContext);
 typedef NTSTATUS (WINAPI * PKERB_ECRYPT_ENCRYPT) (PVOID pContext, LPCVOID Data, DWORD DataSize, PVOID Output, DWORD * OutputSize);
 typedef NTSTATUS (WINAPI * PKERB_ECRYPT_DECRYPT) (PVOID pContext, LPCVOID Data, DWORD DataSize, PVOID Output, DWORD * OutputSize);
 typedef NTSTATUS (WINAPI * PKERB_ECRYPT_FINISH) (PVOID * pContext);
 typedef NTSTATUS (WINAPI * PKERB_ECRYPT_HASHPASSWORD_NT5) (PCUNICODE_STRING String, PVOID Output);
 typedef NTSTATUS (WINAPI * PKERB_ECRYPT_HASHPASSWORD_NT6) (PCUNICODE_STRING Password, PCUNICODE_STRING Salt, DWORD Count, PVOID Output);
-// RandomKey
+typedef NTSTATUS (WINAPI * PKERB_ECRYPT_RANDOMKEY) (LPCVOID Key, DWORD KeySize, PVOID Output);
 // Control
 
 typedef struct _KERB_ECRYPT {
@@ -193,7 +184,7 @@ typedef struct _KERB_ECRYPT {
 		PKERB_ECRYPT_HASHPASSWORD_NT5 HashPassword_NT5;
 		PKERB_ECRYPT_HASHPASSWORD_NT6 HashPassword_NT6;
 	};
-	PVOID RandomKey;
+	PKERB_ECRYPT_RANDOMKEY RandomKey;
 	PVOID Control;
 	PVOID unk0_null;
 	PVOID unk1_null;

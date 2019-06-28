@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "mimikatz.h"
 
@@ -20,50 +20,78 @@ const KUHL_M * mimikatz_modules[] = {
 	&kuhl_m_token,
 	&kuhl_m_vault,
 	&kuhl_m_minesweeper,
-#ifdef NET_MODULE
+#if defined(NET_MODULE)
 	&kuhl_m_net,
 #endif
+	&kuhl_m_dpapi,
+	&kuhl_m_busylight,
+	&kuhl_m_sysenv,
+	&kuhl_m_sid,
+	&kuhl_m_iis,
+	&kuhl_m_rpc,
+	&kuhl_m_sr98,
+	&kuhl_m_rdm,
+	&kuhl_m_acr,
 };
 
 int wmain(int argc, wchar_t * argv[])
 {
-	int i, status = STATUS_SUCCESS;
-#ifndef _WINDLL
+	NTSTATUS status = STATUS_SUCCESS;
+	int i;
+#if !defined(_POWERKATZ)
+	size_t len;
 	wchar_t input[0xffff];
-	kull_m_output_init();
-	SetConsoleTitle(MIMIKATZ L" " MIMIKATZ_VERSION L" " MIMIKATZ_ARCH L" (oe.eo)");
-	SetConsoleCtrlHandler(HandlerRoutine, TRUE);
 #endif
-	kprintf(L"\n"
-		L"  .#####.   " MIMIKATZ_FULL L"\n"
-		L" .## ^ ##.  \n"
-		L" ## / \\ ##  /* * *\n"
-		L" ## \\ / ##   Benjamin DELPY `gentilkiwi` ( benjamin@gentilkiwi.com )\n"
-		L" '## v ##'   http://blog.gentilkiwi.com/mimikatz             (oe.eo)\n"
-		L"  '#####'    " MIMIKATZ_SPECIAL L" with %2u modules * * */\n\n", ARRAYSIZE(mimikatz_modules));
-	
-	mimikatz_initOrClean(TRUE);
+	mimikatz_begin();
 	for(i = MIMIKATZ_AUTO_COMMAND_START ; (i < argc) && (status != STATUS_FATAL_APP_EXIT) ; i++)
 	{
 		kprintf(L"\n" MIMIKATZ L"(" MIMIKATZ_AUTO_COMMAND_STRING L") # %s\n", argv[i]);
 		status = mimikatz_dispatchCommand(argv[i]);
 	}
-#ifndef _WINDLL
+#if !defined(_POWERKATZ)
 	while (status != STATUS_FATAL_APP_EXIT)
 	{
 		kprintf(L"\n" MIMIKATZ L" # "); fflush(stdin);
-		if(wscanf_s(L"%[^\n]s", input, ARRAYSIZE(input)) == 1)
+		if(fgetws(input, ARRAYSIZE(input), stdin) && (len = wcslen(input)) && (input[0] != L'\n'))
 		{
+			if(input[len - 1] == L'\n')
+				input[len - 1] = L'\0';
 			kprintf_inputline(L"%s\n", input);
 			status = mimikatz_dispatchCommand(input);
 		}
 	}
 #endif
-	mimikatz_initOrClean(FALSE);
-#ifndef _WINDLL
-	kull_m_output_clean();
-#endif
+	mimikatz_end();
 	return STATUS_SUCCESS;
+}
+
+void mimikatz_begin()
+{
+	kull_m_output_init();
+#if !defined(_POWERKATZ)
+	SetConsoleTitle(MIMIKATZ L" " MIMIKATZ_VERSION L" " MIMIKATZ_ARCH L" (oe.eo)");
+	SetConsoleCtrlHandler(HandlerRoutine, TRUE);
+#endif
+	kprintf(L"\n"
+		L"  .#####.   " MIMIKATZ_FULL L"\n"
+		L" .## ^ ##.  " MIMIKATZ_SECOND L" - (oe.eo)\n"
+		L" ## / \\ ##  /*** Benjamin DELPY `gentilkiwi` ( benjamin@gentilkiwi.com )\n"
+		L" ## \\ / ##       > http://blog.gentilkiwi.com/mimikatz\n"
+		L" '## v ##'       Vincent LE TOUX             ( vincent.letoux@gmail.com )\n"
+		L"  '#####'        > http://pingcastle.com / http://mysmartlogon.com   ***/\n");
+	mimikatz_initOrClean(TRUE);
+}
+
+void mimikatz_end()
+{
+	mimikatz_initOrClean(FALSE);
+#if !defined(_POWERKATZ)
+	SetConsoleCtrlHandler(HandlerRoutine, FALSE);
+#endif
+	kull_m_output_clean();
+#if !defined(_WINDLL)
+	ExitProcess(STATUS_SUCCESS);
+#endif
 }
 
 BOOL WINAPI HandlerRoutine(DWORD dwCtrlType)
@@ -78,13 +106,20 @@ NTSTATUS mimikatz_initOrClean(BOOL Init)
 	PKUHL_M_C_FUNC_INIT function;
 	long offsetToFunc;
 	NTSTATUS fStatus;
+	HRESULT hr;
 
 	if(Init)
 	{
 		RtlGetNtVersionNumbers(&MIMIKATZ_NT_MAJOR_VERSION, &MIMIKATZ_NT_MINOR_VERSION, &MIMIKATZ_NT_BUILD_NUMBER);
-		MIMIKATZ_NT_BUILD_NUMBER &= 0x00003fff;
-
+		MIMIKATZ_NT_BUILD_NUMBER &= 0x00007fff;
 		offsetToFunc = FIELD_OFFSET(KUHL_M, pInit);
+		hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+		if(FAILED(hr))
+#if defined(_POWERKATZ)
+			if(hr != RPC_E_CHANGED_MODE)
+#endif
+				PRINT_ERROR(L"CoInitializeEx: %08x\n", hr);
+		kull_m_asn1_init();
 	}
 	else
 		offsetToFunc = FIELD_OFFSET(KUHL_M, pClean);
@@ -100,21 +135,32 @@ NTSTATUS mimikatz_initOrClean(BOOL Init)
 	}
 
 	if(!Init)
+	{
+		kull_m_asn1_term();
+		CoUninitialize();
 		kull_m_output_file(NULL);
-
+	}
 	return STATUS_SUCCESS;
 }
 
 NTSTATUS mimikatz_dispatchCommand(wchar_t * input)
 {
-	NTSTATUS status;
-	switch(input[0])
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+	PWCHAR full;
+	if(full = kull_m_file_fullPath(input))
 	{
-	case L'!':
-		status = kuhl_m_kernel_do(input + 1);
-		break;
-	default:
-		status = mimikatz_doLocal(input);
+		switch(full[0])
+		{
+		case L'!':
+			status = kuhl_m_kernel_do(full + 1);
+			break;
+		case L'*':
+			status = kuhl_m_rpc_do(full + 1);
+			break;
+		default:
+			status = mimikatz_doLocal(full);
+		}
+		LocalFree(full);
 	}
 	return status;
 }
@@ -188,7 +234,7 @@ NTSTATUS mimikatz_doLocal(wchar_t * input)
 	return status;
 }
 
-#ifdef _WINDLL
+#if defined(_POWERKATZ)
 __declspec(dllexport) wchar_t * powershell_reflective_mimikatz(LPCWSTR input)
 {
 	int argc = 0;
@@ -198,10 +244,47 @@ __declspec(dllexport) wchar_t * powershell_reflective_mimikatz(LPCWSTR input)
 	{
 		outputBufferElements = 0xff;
 		outputBufferElementsPosition = 0;
-		if(outputBuffer = (wchar_t *) LocalAlloc(LPTR, outputBufferElements))
+		if(outputBuffer = (wchar_t *) LocalAlloc(LPTR, outputBufferElements * sizeof(wchar_t)))
 			wmain(argc, argv);
 		LocalFree(argv);
 	}
 	return outputBuffer;
 }
 #endif
+
+#if defined(_WINDLL)
+void CALLBACK mimikatz_dll(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow)
+{
+	int argc = 0;
+	wchar_t ** argv;
+	if(AllocConsole())
+	{
+#pragma warning(push)
+#pragma warning(disable:4996)
+		freopen("CONOUT$", "w", stdout);
+		freopen("CONOUT$", "w", stderr);
+		freopen("CONIN$", "r", stdin);
+#pragma warning(pop)
+		if(lpszCmdLine && lstrlenW(lpszCmdLine))
+		{
+			if(argv = CommandLineToArgvW(lpszCmdLine, &argc))
+			{
+				wmain(argc, argv);
+				LocalFree(argv);
+			}
+		}
+		else wmain(0, NULL);
+	}
+}
+#endif
+
+FARPROC WINAPI delayHookFailureFunc (unsigned int dliNotify, PDelayLoadInfo pdli)
+{
+    if((dliNotify == dliFailLoadLib) && ((_stricmp(pdli->szDll, "ncrypt.dll") == 0) || (_stricmp(pdli->szDll, "bcrypt.dll") == 0)))
+		RaiseException(ERROR_DLL_NOT_FOUND, 0, 0, NULL);
+    return NULL;
+}
+#if !defined(_DELAY_IMP_VER)
+const
+#endif
+PfnDliHook __pfnDliFailureHook2 = delayHookFailureFunc;

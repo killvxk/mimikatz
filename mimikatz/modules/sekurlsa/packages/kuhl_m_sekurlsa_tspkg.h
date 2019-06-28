@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include "../kuhl_m_sekurlsa.h"
@@ -17,9 +17,9 @@ typedef struct _KIWI_TS_PRIMARY_CREDENTIAL {
 } KIWI_TS_PRIMARY_CREDENTIAL, *PKIWI_TS_PRIMARY_CREDENTIAL;
 
 typedef struct _KIWI_TS_CREDENTIAL {
-#ifdef _M_X64
+#if defined(_M_X64) || defined(_M_ARM64)
 	BYTE unk0[108];
-#elif defined _M_IX86
+#elif defined(_M_IX86)
 	BYTE unk0[64];
 #endif
 	LUID LocallyUniqueIdentifier;
@@ -27,3 +27,20 @@ typedef struct _KIWI_TS_CREDENTIAL {
 	PVOID unk2;
 	PKIWI_TS_PRIMARY_CREDENTIAL pTsPrimary;
 } KIWI_TS_CREDENTIAL, *PKIWI_TS_CREDENTIAL;
+
+typedef struct _KIWI_TS_CREDENTIAL_1607 {
+#if defined(_M_X64) || defined(_M_ARM64)
+	BYTE unk0[112];
+#elif defined(_M_IX86)
+	BYTE unk0[68];
+#endif
+	LUID LocallyUniqueIdentifier;
+	PVOID unk1;
+	PVOID unk2;
+	PKIWI_TS_PRIMARY_CREDENTIAL pTsPrimary;
+} KIWI_TS_CREDENTIAL_1607, *PKIWI_TS_CREDENTIAL_1607;
+
+typedef struct _KIWI_TS_CREDENTIAL_HELPER {
+	LONG offsetToLuid;
+	LONG offsetToTsPrimary;
+} KIWI_TS_CREDENTIAL_HELPER, *PKIWI_TS_CREDENTIAL_HELPER;

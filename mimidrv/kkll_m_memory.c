@@ -1,11 +1,11 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kkll_m_memory.h"
 
-NTSTATUS kkll_m_memory_search(const PUCHAR adresseBase, const PUCHAR adresseMaxMin, const PUCHAR pattern, PUCHAR *addressePattern, SIZE_T longueur)
+NTSTATUS kkll_m_memory_search(const PUCHAR adresseBase, const PUCHAR adresseMaxMin, const UCHAR *pattern, PUCHAR *addressePattern, SIZE_T longueur)
 {
 	for(*addressePattern = adresseBase; (adresseMaxMin > adresseBase) ? (*addressePattern <= adresseMaxMin) : (*addressePattern >= adresseMaxMin); *addressePattern += (adresseMaxMin > adresseBase) ? 1 : -1)
 		if(RtlEqualMemory(pattern, *addressePattern, longueur))
@@ -14,15 +14,15 @@ NTSTATUS kkll_m_memory_search(const PUCHAR adresseBase, const PUCHAR adresseMaxM
 	return STATUS_NOT_FOUND;
 }
 
-NTSTATUS kkll_m_memory_genericPointerSearch(PUCHAR *addressePointeur, const PUCHAR adresseBase, const PUCHAR adresseMaxMin, const PUCHAR pattern, SIZE_T longueur, LONG offsetTo)
+NTSTATUS kkll_m_memory_genericPointerSearch(PUCHAR *addressePointeur, const PUCHAR adresseBase, const PUCHAR adresseMaxMin, const UCHAR *pattern, SIZE_T longueur, LONG offsetTo)
 {
 	NTSTATUS status = kkll_m_memory_search(adresseBase, adresseMaxMin, pattern, addressePointeur, longueur);
 	if(NT_SUCCESS(status))
 	{
 		*addressePointeur += offsetTo;
-		#ifdef _M_X64
+		#if defined(_M_X64)
 			*addressePointeur += sizeof(LONG) + *(PLONG)(*addressePointeur);
-		#elif defined _M_IX86
+		#elif defined(_M_IX86)
 			*addressePointeur = *(PUCHAR *)(*addressePointeur);
 		#endif
 		

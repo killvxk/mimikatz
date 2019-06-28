@@ -1,22 +1,23 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kuhl_m_service_remote.h"
+#if defined(SERVICE_INCONTROL)
 
 PVOID pScSendControl = NULL;
 
-#ifdef _M_X64
+#if defined(_M_X64)
 BYTE PTRN_WN61_ScSendControl[]		= {0x48, 0x81, 0xec, 0xe0, 0x00, 0x00, 0x00, 0x33, 0xdb, 0x33, 0xc0};
 BYTE PTRN_WIN8_ScSendControl[]		= {0x48, 0x8d, 0x6c, 0x24, 0xf9, 0x48, 0x81, 0xec, 0xd0, 0x00, 0x00, 0x00, 0x33, 0xdb, 0x33, 0xc0};
 BYTE PTRN_WI10_ScSendControl[]		= {0x48, 0x8d, 0x6c, 0x24, 0xf9, 0x48, 0x81, 0xec, 0xe0, 0x00, 0x00, 0x00, 0x33, 0xf6};
 KULL_M_PATCH_GENERIC ScSendControlReferences[] = {
 	{KULL_M_WIN_BUILD_7,		{sizeof(PTRN_WN61_ScSendControl),	PTRN_WN61_ScSendControl},	{0, NULL}, {-26}},
 	{KULL_M_WIN_BUILD_8,		{sizeof(PTRN_WIN8_ScSendControl),	PTRN_WIN8_ScSendControl},	{0, NULL}, {-21}},
-	{KULL_M_WIN_BUILD_10,		{sizeof(PTRN_WI10_ScSendControl),	PTRN_WI10_ScSendControl},	{0, NULL}, {-21}},
+	{KULL_M_WIN_BUILD_10_1507,		{sizeof(PTRN_WI10_ScSendControl),	PTRN_WI10_ScSendControl},	{0, NULL}, {-21}},
 };
-#elif defined _M_IX86
+#elif defined(_M_IX86)
 BYTE PTRN_WN61_ScSendControl[]		= {0x8b, 0xff, 0x55, 0x8b, 0xec, 0x81, 0xec, 0x94, 0x00, 0x00, 0x00, 0x53};
 BYTE PTRN_WIN8_ScSendControl[]		= {0x8b, 0xff, 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x83, 0xec, 0x7c};
 BYTE PTRN_WI10_ScSendControl[]		= {0x8b, 0xff, 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x83, 0xec, 0x7c, 0x53, 0x56, 0x57, 0x89};
@@ -24,7 +25,7 @@ BYTE PTRN_WI10_ScSendControl[]		= {0x8b, 0xff, 0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf
 KULL_M_PATCH_GENERIC ScSendControlReferences[] = {
 	{KULL_M_WIN_BUILD_7,		{sizeof(PTRN_WN61_ScSendControl),	PTRN_WN61_ScSendControl},	{0, NULL}, {0}},
 	{KULL_M_WIN_BUILD_8,		{sizeof(PTRN_WIN8_ScSendControl),	PTRN_WIN8_ScSendControl},	{0, NULL}, {0}},
-	{KULL_M_WIN_BUILD_10,		{sizeof(PTRN_WI10_ScSendControl),	PTRN_WI10_ScSendControl},	{0, NULL}, {0}},
+	{KULL_M_WIN_BUILD_10_1507,		{sizeof(PTRN_WI10_ScSendControl),	PTRN_WI10_ScSendControl},	{0, NULL}, {0}},
 };
 #endif
 
@@ -51,8 +52,7 @@ BOOL kuhl_service_sendcontrol_inprocess(PWSTR ServiceName, DWORD dwControl)
 	PVOID pCode;
 	HANDLE hProcess;
 	KULL_M_MEMORY_ADDRESS aRemoteFunc;
-	KULL_M_MEMORY_HANDLE hLocalMemory = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aLocalMemory = {NULL, &hLocalMemory};
+	KULL_M_MEMORY_ADDRESS aLocalMemory = {NULL, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	KULL_M_MEMORY_SEARCH sMemory;
 	PKULL_M_PATCH_GENERIC currentReference;
 	PEB Peb;
@@ -127,3 +127,4 @@ BOOL kuhl_service_sendcontrol_inprocess(PWSTR ServiceName, DWORD dwControl)
 	}
 	return status;
 }
+#endif

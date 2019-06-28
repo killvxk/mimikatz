@@ -1,12 +1,13 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include "../kuhl_m_sekurlsa.h"
 #include "../kuhl_m_sekurlsa_utils.h"
 #include "../modules/kull_m_crypto_system.h"
+#include "../modules/rpc/kull_m_rpc_ms-credentialkeys.h"
 
 typedef struct _MSV1_0_PRIMARY_CREDENTIAL { 
 	LSA_UNICODE_STRING LogonDomainName; 
@@ -20,41 +21,76 @@ typedef struct _MSV1_0_PRIMARY_CREDENTIAL {
 	/* buffer */
 } MSV1_0_PRIMARY_CREDENTIAL, *PMSV1_0_PRIMARY_CREDENTIAL;
 
-typedef struct _MSV1_0_PRIMARY_CREDENTIAL_10 { 
+typedef struct _MSV1_0_PRIMARY_CREDENTIAL_10_OLD { 
 	LSA_UNICODE_STRING LogonDomainName; 
 	LSA_UNICODE_STRING UserName;
-	
-	BOOLEAN isUnk0;
+	BOOLEAN isIso;
 	BOOLEAN isNtOwfPassword;
 	BOOLEAN isLmOwfPassword;
 	BOOLEAN isShaOwPassword;
-	BOOLEAN isUnk1;
-	BOOLEAN isUnk2;
-	BOOLEAN isUnk3; //
-	BOOLEAN isUnk4; //
-
+	BYTE align0;
+	BYTE align1;
 	BYTE NtOwfPassword[LM_NTLM_HASH_LENGTH];
 	BYTE LmOwfPassword[LM_NTLM_HASH_LENGTH];
 	BYTE ShaOwPassword[SHA_DIGEST_LENGTH];
-	BYTE UnkStruct[128];
+	/* buffer */
+} MSV1_0_PRIMARY_CREDENTIAL_10_OLD, *PMSV1_0_PRIMARY_CREDENTIAL_10_OLD;
+
+typedef struct _MSV1_0_PRIMARY_CREDENTIAL_10 { 
+	LSA_UNICODE_STRING LogonDomainName; 
+	LSA_UNICODE_STRING UserName;
+	BOOLEAN isIso;
+	BOOLEAN isNtOwfPassword;
+	BOOLEAN isLmOwfPassword;
+	BOOLEAN isShaOwPassword;
+	BYTE align0;
+	BYTE align1;
+	BYTE align2;
+	BYTE align3;
+	BYTE NtOwfPassword[LM_NTLM_HASH_LENGTH];
+	BYTE LmOwfPassword[LM_NTLM_HASH_LENGTH];
+	BYTE ShaOwPassword[SHA_DIGEST_LENGTH];
 	/* buffer */
 } MSV1_0_PRIMARY_CREDENTIAL_10, *PMSV1_0_PRIMARY_CREDENTIAL_10;
 
-typedef struct _MARSHALL_KEY {
-	DWORD unkId;
-	USHORT unk0;
-	USHORT length;
-	RPCEID ElementId;
-} MARSHALL_KEY, *PMARSHALL_KEY;
+typedef struct _MSV1_0_PRIMARY_CREDENTIAL_10_1607 { 
+	LSA_UNICODE_STRING LogonDomainName; 
+	LSA_UNICODE_STRING UserName;
+	PVOID pNtlmCredIsoInProc;
+	BOOLEAN isIso;
+	BOOLEAN isNtOwfPassword;
+	BOOLEAN isLmOwfPassword;
+	BOOLEAN isShaOwPassword;
+	BOOLEAN isDPAPIProtected;
+	BYTE align0;
+	BYTE align1;
+	BYTE align2;
+	DWORD unkD; // 1/2
+	#pragma pack(push, 2)
+	WORD isoSize;  // 0000
+	BYTE DPAPIProtected[LM_NTLM_HASH_LENGTH];
+	DWORD align3; // 00000000
+	#pragma pack(pop) 
+	BYTE NtOwfPassword[LM_NTLM_HASH_LENGTH];
+	BYTE LmOwfPassword[LM_NTLM_HASH_LENGTH];
+	BYTE ShaOwPassword[SHA_DIGEST_LENGTH];
+	/* buffer */
+} MSV1_0_PRIMARY_CREDENTIAL_10_1607, *PMSV1_0_PRIMARY_CREDENTIAL_10_1607;
 
-typedef struct _RPCE_CREDENTIAL_KEYCREDENTIAL {
-	RPCE_COMMON_TYPE_HEADER	typeHeader;
-	RPCE_PRIVATE_HEADER	privateHeader;
-	RPCEID RootElementId;
-	DWORD unk0;
-	DWORD unk1;
-	MARSHALL_KEY key[ANYSIZE_ARRAY];
-} RPCE_CREDENTIAL_KEYCREDENTIAL, *PRPCE_CREDENTIAL_KEYCREDENTIAL;
+typedef struct _MSV1_0_PRIMARY_HELPER {
+	LONG offsetToLogonDomain;
+	LONG offsetToUserName;
+	LONG offsetToisIso;
+	LONG offsetToisNtOwfPassword;
+	LONG offsetToisLmOwfPassword;
+	LONG offsetToisShaOwPassword;
+	LONG offsetToisDPAPIProtected;
+	LONG offsetToNtOwfPassword;
+	LONG offsetToLmOwfPassword;
+	LONG offsetToShaOwPassword;
+	LONG offsetToDPAPIProtected;
+	LONG offsetToIso;
+} MSV1_0_PRIMARY_HELPER, *PMSV1_0_PRIMARY_HELPER;
 
 typedef struct _MSV1_0_PTH_DATA_CRED { 
 	PKIWI_BASIC_SECURITY_LOGON_SESSION_DATA pSecData;
@@ -76,3 +112,5 @@ BOOL CALLBACK kuhl_m_sekurlsa_enum_callback_msv_pth(IN PKIWI_BASIC_SECURITY_LOGO
 VOID kuhl_m_sekurlsa_msv_enum_cred(IN PKUHL_M_SEKURLSA_CONTEXT cLsass, IN PVOID pCredentials, IN PKUHL_M_SEKURLSA_MSV_CRED_CALLBACK credCallback, IN PVOID optionalData);
 BOOL CALLBACK kuhl_m_sekurlsa_msv_enum_cred_callback_std(IN PKUHL_M_SEKURLSA_CONTEXT cLsass, IN struct _KIWI_MSV1_0_PRIMARY_CREDENTIALS * pCredentials, IN DWORD AuthenticationPackageId, IN PKULL_M_MEMORY_ADDRESS origBufferAddress, IN OPTIONAL LPVOID pOptionalData);
 BOOL CALLBACK kuhl_m_sekurlsa_msv_enum_cred_callback_pth(IN PKUHL_M_SEKURLSA_CONTEXT cLsass, IN struct _KIWI_MSV1_0_PRIMARY_CREDENTIALS * pCredentials, IN DWORD AuthenticationPackageId, IN PKULL_M_MEMORY_ADDRESS origBufferAddress, IN OPTIONAL LPVOID pOptionalData);
+
+const MSV1_0_PRIMARY_HELPER * kuhl_m_sekurlsa_msv_helper(PKUHL_M_SEKURLSA_CONTEXT context);

@@ -1,11 +1,11 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kull_m_remotelib.h"
 
-PREMOTE_LIB_INPUT_DATA kull_m_remotelib_CreateInput(PVOID inputVoid, DWORD inputDword, DWORD inputSize, PVOID inputData)
+PREMOTE_LIB_INPUT_DATA kull_m_remotelib_CreateInput(PVOID inputVoid, DWORD inputDword, DWORD inputSize, LPCVOID inputData)
 {
 	PREMOTE_LIB_INPUT_DATA iData;
 	if(iData = (PREMOTE_LIB_INPUT_DATA) LocalAlloc(LPTR, FIELD_OFFSET(REMOTE_LIB_INPUT_DATA, inputData) + inputSize))
@@ -26,8 +26,7 @@ BOOL kull_m_remotelib_create(PKULL_M_MEMORY_ADDRESS aRemoteFunc, PREMOTE_LIB_INP
 	BOOL success = FALSE;
 	NTSTATUS status;
 	HANDLE hThread;
-	KULL_M_MEMORY_HANDLE  hLocalBuffer = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aRemoteData = {NULL, aRemoteFunc->hMemory}, aSuppData = {NULL, aRemoteFunc->hMemory}, aLocalAddr = {NULL, &hLocalBuffer};
+	KULL_M_MEMORY_ADDRESS aRemoteData = {NULL, aRemoteFunc->hMemory}, aSuppData = {NULL, aRemoteFunc->hMemory}, aLocalAddr = {NULL, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	PREMOTE_LIB_DATA data;
 	REMOTE_LIB_OUTPUT_DATA oData;
 	MIMIDRV_THREAD_INFO drvInfo = {(PTHREAD_START_ROUTINE) aRemoteFunc->address, NULL};
@@ -80,7 +79,7 @@ BOOL kull_m_remotelib_create(PKULL_M_MEMORY_ADDRESS aRemoteFunc, PREMOTE_LIB_INP
 						PRINT_ERROR_AUTO(L"kull_m_kernel_ioctl_handle");
 					break;
 				}
-
+				
 				if(success)
 				{
 					aLocalAddr.address = output;
@@ -115,14 +114,13 @@ BOOL kull_m_remotelib_create(PKULL_M_MEMORY_ADDRESS aRemoteFunc, PREMOTE_LIB_INP
 								if(!success)
 									output->outputSize = 0;
 							}
-							kull_m_memory_free(&aSuppData, 0);
+							kull_m_memory_free(&aSuppData);
 						}
 					}
 				}
 			}
-			kull_m_memory_free(&aRemoteData, 0);
+			kull_m_memory_free(&aRemoteData);
 		}
-
 		LocalFree(data);
 	}
 	return success;
@@ -170,8 +168,7 @@ BOOL kull_m_remotelib_CreateRemoteCodeWitthPatternReplace(PKULL_M_MEMORY_HANDLE 
 {
 	BOOL success = FALSE;
 	DWORD i, j;
-	KULL_M_MEMORY_HANDLE hLocalMemory = {KULL_M_MEMORY_TYPE_OWN, NULL};
-	KULL_M_MEMORY_ADDRESS aLocalAddr = {(LPVOID) Buffer, &hLocalMemory};
+	KULL_M_MEMORY_ADDRESS aLocalAddr = {(LPVOID) Buffer, &KULL_M_MEMORY_GLOBAL_OWN_HANDLE};
 	
 	DestAddress->hMemory = hProcess;
 	DestAddress->address = NULL;
@@ -206,7 +203,7 @@ BOOL kull_m_remotelib_CreateRemoteCodeWitthPatternReplace(PKULL_M_MEMORY_HANDLE 
 			if(!(success = kull_m_memory_copy(DestAddress, &aLocalAddr, BufferSize)))
 			{
 				PRINT_ERROR_AUTO(L"kull_m_memory_copy");
-				kull_m_memory_free(DestAddress, 0);
+				kull_m_memory_free(DestAddress);
 			}
 		}
 		else PRINT_ERROR_AUTO(L"kull_m_memory_alloc / VirtualAlloc(Ex)");

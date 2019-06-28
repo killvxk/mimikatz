@@ -1,145 +1,122 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #include "kull_m_asn1.h"
 
-DWORD kull_m_asn1_getSize(PDIRTY_ASN1_SEQUENCE_EASY sequence)
-{
-	DWORD size;
-	if(sequence->seq2.sizeSize & DIRTY_ASN1_MASK_HIGH_SIZE)
-		size = _byteswap_ushort(sequence->seq2.size) + sizeof(DIRTY_ASN1_SEQUENCE_2);
-	else
-		size = sequence->seq1.size + sizeof(DIRTY_ASN1_SEQUENCE_1);
-	return size;
-}
+ASN1module_t hASN1Module = NULL;
+ASN1encoding_t ASN1enc = NULL;
+ASN1decoding_t ASN1dec = NULL;
 
-void kull_m_asn1_append(PDIRTY_ASN1_SEQUENCE_EASY * parent, PDIRTY_ASN1_SEQUENCE_EASY child)
-{
-	BOOL result =  FALSE;
-	PDIRTY_ASN1_SEQUENCE_EASY buffer = NULL;
-	DWORD szParent, szChild, szTotal;
-
-	if(child)
-	{
-		szParent = kull_m_asn1_getSize(*parent);
-		szChild = kull_m_asn1_getSize(child);
-	
-		if((*parent)->seq2.sizeSize & DIRTY_ASN1_MASK_HIGH_SIZE)
-		{
-			if(buffer = (PDIRTY_ASN1_SEQUENCE_EASY) LocalAlloc(LPTR, szParent + szChild))
-			{
-				RtlCopyMemory(buffer, *parent, szParent);
-				RtlCopyMemory((PBYTE) buffer + szParent, child, szChild);
-				buffer->seq2.size = _byteswap_ushort((USHORT) (_byteswap_ushort(buffer->seq2.size) + szChild));
-			}
-		}
-		else
-		{
-			szTotal = szChild + (*parent)->seq1.size;
-			if(szTotal > 0x7f)
-			{
-				if(buffer = (PDIRTY_ASN1_SEQUENCE_EASY) LocalAlloc(LPTR, sizeof(DIRTY_ASN1_SEQUENCE_2) + szTotal))
-				{
-					RtlCopyMemory((PBYTE) buffer + sizeof(DIRTY_ASN1_SEQUENCE_2), (PBYTE) (*parent) + sizeof(DIRTY_ASN1_SEQUENCE_1), (*parent)->seq1.size);
-					RtlCopyMemory((PBYTE) buffer + sizeof(DIRTY_ASN1_SEQUENCE_2) + (*parent)->seq1.size, child, szChild);
-					buffer->seq2.type = (*parent)->seq1.type;
-					buffer->seq2.sizeSize = DIRTY_ASN1_MASK_HIGH_SIZE | 2;
-					buffer->seq2.size = _byteswap_ushort((USHORT) szTotal);
-				}
-			}
-			else
-			{
-				if(buffer = (PDIRTY_ASN1_SEQUENCE_EASY) LocalAlloc(LPTR, szParent + szChild))
-				{
-					RtlCopyMemory(buffer, *parent, szParent);
-					RtlCopyMemory((PBYTE) buffer + szParent, child, szChild);
-					buffer->seq1.size += (UCHAR) szChild;
-				}
-			}
-		}
-		if(buffer)
-		{
-			LocalFree(child);
-			LocalFree(*parent);
-			*parent = buffer;
-		}
-	}
-}
-
-void kull_m_asn1_append_ctx_and_data_to_seq(PDIRTY_ASN1_SEQUENCE_EASY * Seq, UCHAR CtxId, PDIRTY_ASN1_SEQUENCE_EASY Data)
-{
-	PDIRTY_ASN1_SEQUENCE_EASY Ctx_root;
-	if(Ctx_root = KULL_M_ASN1_CREATE_CTX(CtxId))
-	{
-		kull_m_asn1_append(&Ctx_root, Data);
-		kull_m_asn1_append(Seq, Ctx_root);
-	}
-}
-
-PDIRTY_ASN1_SEQUENCE_EASY kull_m_asn1_create(UCHAR type, LPCVOID data, DWORD size, PDIRTY_ASN1_SEQUENCE_EASY *parent)
-{
-	PDIRTY_ASN1_SEQUENCE_EASY buffer = NULL;
-	if(size > 0x7f)
-	{
-		if(buffer = (PDIRTY_ASN1_SEQUENCE_EASY) LocalAlloc(LPTR, sizeof(DIRTY_ASN1_SEQUENCE_2) + size))
-		{
-			buffer->seq2.type = type;
-			buffer->seq2.sizeSize = DIRTY_ASN1_MASK_HIGH_SIZE | 2;
-			buffer->seq2.size = _byteswap_ushort((USHORT) size);
-			if(data)
-				RtlCopyMemory((PBYTE) buffer + sizeof(DIRTY_ASN1_SEQUENCE_2), data, size);
-		}
-	}
-	else
-	{
-		if(buffer = (PDIRTY_ASN1_SEQUENCE_EASY) LocalAlloc(LPTR, sizeof(DIRTY_ASN1_SEQUENCE_1) + size))
-		{
-			buffer->seq1.type = type;
-			buffer->seq1.size = (UCHAR) size;
-			if(data)
-				RtlCopyMemory((PBYTE) buffer + sizeof(DIRTY_ASN1_SEQUENCE_1), data, size);
-		}
-	}
-	
-	if(parent)
-	{
-		kull_m_asn1_append(parent, buffer);
-		buffer = NULL;
-	}
-	return buffer;
-}
-
-PDIRTY_ASN1_SEQUENCE_EASY kull_m_asn1_GenTime(PFILETIME localtime)
-{
-	BOOL status = FALSE;
-	SYSTEMTIME st;
-	char buffer[4 + 2 + 2 + 2 + 2 + 2 + 1 + 1];
-	
-	if(FileTimeToSystemTime(localtime, &st))
-	{
-		if(status = (sprintf_s(buffer, sizeof(buffer), "%04hu%02hu%02hu%02hu%02hu%02huZ", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond) > 0))
-			return kull_m_asn1_create(DIRTY_ASN1_ID_GENERALIZED_TIME, buffer, sizeof(buffer) - 1, NULL);
-	}
-	return NULL;
-}
-
-PDIRTY_ASN1_SEQUENCE_EASY kull_m_asn1_GenString(PCUNICODE_STRING String)
-{
-	ANSI_STRING aString;
-	PDIRTY_ASN1_SEQUENCE_EASY GeneralString = NULL;
-	if(NT_SUCCESS(RtlUnicodeStringToAnsiString(&aString, String, TRUE)))
-	{
-		GeneralString = kull_m_asn1_create(DIRTY_ASN1_ID_GENERAL_STRING, aString.Buffer, aString.Length, NULL);
-		RtlFreeAnsiString(&aString);
-	}
-	return GeneralString;
-}
-
-PDIRTY_ASN1_SEQUENCE_EASY kull_m_asn1_BitStringFromULONG(ULONG data)
+void kull_m_asn1_BitStringFromULONG(BerElement * pBer, ULONG data)
 {
 	BYTE flagBuffer[5] = {0};
 	*(PDWORD) (flagBuffer + 1) = _byteswap_ulong(data);
-	return kull_m_asn1_create(DIRTY_ASN1_ID_BIT_STRING, flagBuffer, sizeof(flagBuffer), NULL);
+	ber_printf(pBer, "X", flagBuffer, sizeof(flagBuffer));
+}
+
+void kull_m_asn1_GenTime(BerElement * pBer, PFILETIME localtime)
+{
+	SYSTEMTIME st;
+	char buffer[4 + 2 + 2 + 2 + 2 + 2 + 1 + 1];
+	if(FileTimeToSystemTime(localtime, &st))
+		if(sprintf_s(buffer, sizeof(buffer), "%04hu%02hu%02hu%02hu%02hu%02huZ", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond) > 0)
+			ber_printf(pBer, "to", DIRTY_ASN1_ID_GENERALIZED_TIME, buffer, sizeof(buffer) - 1);
+}
+
+void kull_m_asn1_GenString(BerElement * pBer, PCUNICODE_STRING String)
+{
+	ANSI_STRING aString;
+	if(NT_SUCCESS(RtlUnicodeStringToAnsiString(&aString, String, TRUE)))
+	{
+		ber_printf(pBer, "to", DIRTY_ASN1_ID_GENERAL_STRING, aString.Buffer, aString.Length);
+		RtlFreeAnsiString(&aString);
+	}
+}
+
+static const ASN1GenericFun_t kull_m_asn1_encdecfreefntab[] = {NULL};
+static const ASN1uint32_t kull_m_asn1_sizetab[] = {0};
+BOOL kull_m_asn1_init()
+{
+	BOOL status = FALSE;
+	int ret;
+	if(hASN1Module = ASN1_CreateModule(ASN1_THIS_VERSION, ASN1_BER_RULE_DER, ASN1FLAGS_NOASSERT, 1, kull_m_asn1_encdecfreefntab, kull_m_asn1_encdecfreefntab, (const ASN1FreeFun_t *) kull_m_asn1_encdecfreefntab, kull_m_asn1_sizetab, 'iwik'))
+	{
+		ret = ASN1_CreateEncoder(hASN1Module, &ASN1enc, NULL, 0, NULL);
+		if(ASN1_FAILED(ret))
+		{
+			PRINT_ERROR(L"ASN1_CreateEncoder: %i\n", ret);
+			ASN1enc = NULL;
+		}
+		else
+		{
+			ret = ASN1_CreateDecoder(hASN1Module, &ASN1dec, NULL, 0, NULL);
+			if(ASN1_FAILED(ret))
+			{
+				PRINT_ERROR(L"ASN1_CreateDecoder: %i\n", ret);
+				ASN1dec = NULL;
+			}
+		}
+	}
+	else PRINT_ERROR(L"ASN1_CreateModule\n");
+
+	status = hASN1Module && ASN1enc && ASN1dec;
+	if(!status)
+		kull_m_asn1_term();
+	return status;
+}
+
+void kull_m_asn1_term()
+{
+	if(ASN1dec)
+	{
+		ASN1_CloseDecoder(ASN1dec);
+		ASN1dec = NULL;
+	}
+	if(ASN1enc)
+	{
+		ASN1_CloseEncoder(ASN1enc);
+		ASN1enc = NULL;
+	}
+	if(hASN1Module)
+	{
+		ASN1_CloseModule(hASN1Module);
+		hASN1Module = NULL;
+	}
+}
+
+BOOL kull_m_asn1_DotVal2Eoid(__in const ASN1char_t *dotOID, __out OssEncodedOID *encodedOID)
+{
+	BOOL status = FALSE;
+	if(ASN1enc && dotOID && encodedOID)
+	{
+		encodedOID->length = 0;
+		encodedOID->value = NULL;
+		status = ASN1BERDotVal2Eoid(ASN1enc, dotOID, encodedOID);
+	}
+	return status;
+}
+
+void kull_m_asn1_freeEnc(void *pBuf)
+{
+	if(ASN1enc && pBuf)
+		ASN1_FreeEncoded(ASN1enc, pBuf);
+}
+
+BOOL kull_m_asn1_Eoid2DotVal(__in const OssEncodedOID *encodedOID, __out ASN1char_t **dotOID)
+{
+	BOOL status = FALSE;
+	if(ASN1dec && encodedOID && dotOID)
+	{
+		*dotOID = NULL;
+		status = ASN1BEREoid2DotVal(ASN1dec, encodedOID, dotOID);
+	}
+	return status;
+}
+
+void kull_m_asn1_freeDec(void *pBuf)
+{
+	if(pBuf)
+		ASN1Free(pBuf);
 }

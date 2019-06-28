@@ -1,14 +1,13 @@
 /*	Benjamin DELPY `gentilkiwi`
 	http://blog.gentilkiwi.com
 	benjamin@gentilkiwi.com
-	Licence : http://creativecommons.org/licenses/by/3.0/fr/
+	Licence : https://creativecommons.org/licenses/by/4.0/
 */
 #pragma once
 #include "globals.h"
 #include <dbghelp.h>
 
-typedef struct _KULL_M_MINIDUMP_HANDLE
-{
+typedef struct _KULL_M_MINIDUMP_HANDLE {
 	HANDLE hFileMapping;
 	LPVOID pMapViewOfFile;
 } KULL_M_MINIDUMP_HANDLE, *PKULL_M_MINIDUMP_HANDLE;
