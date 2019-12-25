@@ -68,6 +68,7 @@ NTSTATUS kuhl_m_lsadump_setntlm(int argc, wchar_t * argv[]);
 NTSTATUS kuhl_m_lsadump_changentlm(int argc, wchar_t * argv[]);
 NTSTATUS kuhl_m_lsadump_netsync(int argc, wchar_t * argv[]);
 NTSTATUS kuhl_m_lsadump_packages(int argc, wchar_t * argv[]);
+NTSTATUS kuhl_m_lsadump_mbc(int argc, wchar_t * argv[]);
 
 BOOL kuhl_m_lsadump_getSids(IN PKULL_M_REGISTRY_HANDLE hSecurity, IN HKEY hPolicyBase, IN LPCWSTR littleKey, IN LPCWSTR prefix);
 BOOL kuhl_m_lsadump_getComputerAndSyskey(IN PKULL_M_REGISTRY_HANDLE hRegistry, IN HKEY hSystemBase, OUT LPBYTE sysKey);
@@ -428,6 +429,9 @@ typedef struct _LSA_SUPCREDENTIALS_BUFFERS {
 typedef struct _KUHL_LSADUMP_DCC_CACHE_DATA {
 	LPCWSTR username;
 	BYTE ntlm[LM_NTLM_HASH_LENGTH];
+	BOOL isNtlm;
+	BYTE dcc[LM_NTLM_HASH_LENGTH];
+	BOOL isDCC;
 	HCRYPTPROV_OR_NCRYPT_KEY_HANDLE hProv;
 	DWORD keySpec;
 } KUHL_LSADUMP_DCC_CACHE_DATA, *PKUHL_LSADUMP_DCC_CACHE_DATA;
